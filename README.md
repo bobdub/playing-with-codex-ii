@@ -3,6 +3,15 @@
 Create a lightweight website that chats with a locally hosted large language
 model (LLM).
 
+## Live console
+
+Visit the published GitHub Pages site at [`docs/index.html`](docs/index.html)
+to launch the in-browser TinyLlama console. The page loads the same static
+client that lives under `frontend/`, giving you quick access to the controls
+without needing to start a local web server. Point the "Backend URL" field at
+your running FastAPI instance (for local testing this is typically
+`http://localhost:8000`).
+
 ## Repository layout
 
 The project is deliberately small so it can run entirely on a developer's
