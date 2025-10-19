@@ -52,16 +52,18 @@ usage.
 
 ## Frontend setup
 
-The frontend is framework-free HTML that only requires a static file server:
+The refreshed frontend is a framework-free HTML experience that exposes
+controls for the backend URL, temperature, max tokens, and an optional system
+instruction. Serve it with any static file server:
 
 ```bash
 cd frontend
 python -m http.server 3000
 ```
 
-Open <http://localhost:3000> and start chatting. The page assumes the backend is
-reachable at `http://localhost:8000`; edit `frontend/index.html` if you use a
-different host or port.
+Open <http://localhost:3000> and start chatting. Update the “Backend URL” field
+inside the UI if your API runs elsewhere and provide a system instruction to
+steer the assistant’s behaviour.
 
 ## Customisation ideas
 
