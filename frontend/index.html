@@ -4,18 +4,35 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TinyLlama Local Chat Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap"
+      rel="stylesheet"
+    />
     <style>
       :root {
-        color-scheme: light dark;
-        --bg: radial-gradient(circle at 20% 20%, #23324a, #101820 65%);
-        --panel: rgba(16, 24, 32, 0.75);
-        --panel-border: rgba(255, 255, 255, 0.08);
-        --accent: #4f9cff;
-        --accent-strong: #6db8ff;
+        --bg-primary: #1c134c;
+        --bg-secondary: #0b0425;
+        --bg-grid-color: rgba(16, 7, 40, 0.65);
+        --panel-bg: rgba(7, 6, 30, 0.92);
+        --panel-border-inner: #f9f17f;
+        --panel-border-mid: #f43cff;
+        --panel-border-outer: #08c5ff;
+        --panel-shadow: 0 0 0 2px var(--panel-border-inner),
+          0 0 0 5px var(--panel-border-mid),
+          0 0 0 8px var(--panel-border-outer);
+        --accent: #f4f13d;
+        --accent-strong: #ff5efb;
         --danger: #ff6f61;
-        --text-primary: #f1f5f9;
-        --text-secondary: rgba(241, 245, 249, 0.7);
-        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --text-primary: #fdfbd6;
+        --text-secondary: rgba(253, 251, 214, 0.75);
+        --font-body: "VT323", "Lucida Console", monospace;
+        --font-heading: "Press Start 2P", "Lucida Console", monospace;
+        --surface-stripe: rgba(8, 197, 255, 0.08);
+        font-family: var(--font-body);
+        font-size: 18px;
+        line-height: 1.45;
       }
 
       * {
@@ -25,177 +42,255 @@
       body {
         margin: 0;
         min-height: 100vh;
-        background: var(--bg);
+        background:
+          radial-gradient(circle at 15% 10%, rgba(244, 94, 251, 0.25), transparent 45%),
+          radial-gradient(circle at 80% 20%, rgba(8, 197, 255, 0.3), transparent 50%),
+          linear-gradient(135deg, var(--bg-primary), var(--bg-secondary));
         color: var(--text-primary);
         display: flex;
         flex-direction: column;
-        line-height: 1.6;
+        font-family: var(--font-body);
+        position: relative;
+        overflow-x: hidden;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background:
+          repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 10px,
+            var(--bg-grid-color) 10px,
+            var(--bg-grid-color) 12px
+          ),
+          repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent 10px,
+            var(--bg-grid-color) 10px,
+            var(--bg-grid-color) 12px
+          );
+        pointer-events: none;
+        image-rendering: pixelated;
+        opacity: 0.4;
       }
 
       header {
-        padding: 2.5rem 1.5rem 1.5rem;
+        padding: 2.75rem 1.5rem 1.5rem;
         text-align: center;
+        position: relative;
       }
 
       header h1 {
-        margin: 0 0 0.5rem;
-        font-size: clamp(2rem, 2.8vw, 2.75rem);
-        letter-spacing: 0.04em;
+        margin: 0 0 0.75rem;
+        font-size: clamp(1.8rem, 2.2vw, 2.4rem);
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-family: var(--font-heading);
+        color: var(--accent);
+        text-shadow: 4px 4px 0 rgba(10, 3, 33, 0.85);
       }
 
       header p {
         margin: 0 auto;
-        max-width: 720px;
+        max-width: 680px;
         color: var(--text-secondary);
-        font-size: 1rem;
+        font-size: 1.05rem;
+        text-shadow: 2px 2px 0 rgba(10, 3, 33, 0.85);
       }
 
       main {
         flex: 1;
-        width: min(1200px, 100%);
-        margin: 0 auto 2.5rem;
-        padding: 0 1.5rem;
+        width: min(1180px, 100%);
+        margin: 0 auto 2.75rem;
+        padding: 0 1.75rem;
         display: grid;
-        gap: 1.5rem;
+        gap: 1.75rem;
         grid-template-columns: 2.5fr 1fr;
       }
 
       .panel {
-        background: var(--panel);
-        border: 1px solid var(--panel-border);
-        border-radius: 18px;
-        backdrop-filter: blur(16px);
-        box-shadow: 0 20px 45px rgba(2, 12, 24, 0.55);
+        background: var(--panel-bg);
+        border-radius: 12px;
+        border: 3px solid var(--panel-border-inner);
+        box-shadow: var(--panel-shadow);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .panel::before {
+        content: "";
+        position: absolute;
+        inset: 6px;
+        border: 2px solid rgba(8, 197, 255, 0.35);
+        pointer-events: none;
+        mix-blend-mode: screen;
       }
 
       .chat-panel {
         display: flex;
         flex-direction: column;
-        overflow: hidden;
+        min-height: 0;
       }
 
       .chat-toolbar {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 1rem 1.5rem;
-        border-bottom: 1px solid var(--panel-border);
+        padding: 1.15rem 1.65rem;
+        background: linear-gradient(90deg, rgba(8, 197, 255, 0.25), rgba(244, 60, 255, 0.25));
+        border-bottom: 3px solid var(--panel-border-inner);
+        box-shadow: inset 0 -3px 0 rgba(4, 9, 48, 0.8);
       }
 
       .chat-toolbar h2 {
         margin: 0;
-        font-size: 1rem;
+        font-size: 0.95rem;
         text-transform: uppercase;
         letter-spacing: 0.12em;
-        color: var(--text-secondary);
+        font-family: var(--font-heading);
+        color: var(--text-primary);
+        text-shadow: 3px 3px 0 rgba(10, 3, 33, 0.9);
       }
 
       .status-chip {
         display: inline-flex;
         align-items: center;
-        gap: 0.5rem;
-        padding: 0.35rem 0.75rem;
+        gap: 0.4rem;
+        padding: 0.4rem 0.8rem;
         border-radius: 999px;
-        font-size: 0.8rem;
-        background: rgba(79, 156, 255, 0.12);
+        font-size: 0.7rem;
+        letter-spacing: 0.08em;
+        background: rgba(8, 197, 255, 0.22);
         color: var(--accent);
+        border: 2px solid rgba(244, 60, 255, 0.4);
+        box-shadow: 2px 2px 0 rgba(4, 9, 48, 0.75);
       }
 
       .status-chip[data-state="error"] {
-        background: rgba(255, 111, 97, 0.12);
+        background: rgba(255, 111, 97, 0.2);
         color: var(--danger);
+        border-color: rgba(255, 111, 97, 0.6);
       }
 
       .status-chip svg {
-        width: 16px;
-        height: 16px;
+        width: 14px;
+        height: 14px;
       }
 
       #history {
         flex: 1;
         overflow-y: auto;
-        padding: 1.5rem;
+        padding: 1.75rem;
         display: grid;
-        gap: 1rem;
+        gap: 1.25rem;
         align-content: start;
-        scrollbar-color: var(--accent) rgba(255, 255, 255, 0.05);
+        scrollbar-width: thin;
+        scrollbar-color: var(--accent) rgba(8, 7, 32, 0.7);
+        background:
+          repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 24px,
+            var(--surface-stripe) 24px,
+            var(--surface-stripe) 28px
+          );
       }
 
       .message {
-        padding: 1rem 1.25rem;
-        border-radius: 16px;
+        padding: 0.9rem 1.1rem;
+        border-radius: 6px;
         position: relative;
-        border: 1px solid rgba(255, 255, 255, 0.06);
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+        border: 3px solid rgba(244, 60, 255, 0.35);
+        background:
+          linear-gradient(135deg, rgba(14, 9, 52, 0.9), rgba(31, 18, 83, 0.75));
+        box-shadow: 6px 6px 0 rgba(8, 7, 32, 0.85);
       }
 
       .message strong {
         display: block;
         font-size: 0.75rem;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.16em;
         text-transform: uppercase;
-        color: var(--text-secondary);
-        margin-bottom: 0.35rem;
+        color: var(--accent);
+        margin-bottom: 0.45rem;
+        font-family: var(--font-heading);
       }
 
       .message p {
         margin: 0;
         white-space: pre-wrap;
+        line-height: 1.35;
       }
 
       .message[data-role="user"] {
-        background: rgba(79, 156, 255, 0.12);
-        border-color: rgba(79, 156, 255, 0.32);
+        border-color: rgba(8, 197, 255, 0.6);
+        background: linear-gradient(135deg, rgba(6, 32, 72, 0.85), rgba(12, 52, 108, 0.7));
       }
 
       .message[data-role="assistant"] {
-        background: rgba(20, 190, 130, 0.12);
-        border-color: rgba(20, 190, 130, 0.28);
+        border-color: rgba(244, 60, 255, 0.55);
+        background: linear-gradient(135deg, rgba(47, 7, 66, 0.85), rgba(75, 14, 112, 0.7));
       }
 
       .message[data-role="system"] {
         font-style: italic;
-        background: rgba(255, 255, 255, 0.06);
+        border-color: rgba(249, 241, 127, 0.65);
+        background: linear-gradient(135deg, rgba(64, 51, 12, 0.8), rgba(89, 70, 16, 0.65));
+        color: #f9f3b8;
       }
 
       .message[data-role="error"] {
-        background: rgba(255, 111, 97, 0.16);
-        border-color: rgba(255, 111, 97, 0.4);
+        border-color: rgba(255, 111, 97, 0.7);
+        background: linear-gradient(135deg, rgba(78, 8, 12, 0.85), rgba(128, 24, 28, 0.7));
       }
 
       .message[data-pending="true"]::after {
         content: "Generating…";
         position: absolute;
-        top: 1rem;
-        right: 1.25rem;
-        font-size: 0.7rem;
+        top: 0.8rem;
+        right: 1rem;
+        font-size: 0.65rem;
         text-transform: uppercase;
         letter-spacing: 0.18em;
         color: var(--text-secondary);
       }
 
       .chat-input {
-        border-top: 1px solid var(--panel-border);
-        padding: 1.25rem 1.5rem 1.5rem;
+        border-top: 3px solid var(--panel-border-inner);
+        padding: 1.25rem 1.65rem 1.65rem;
         display: grid;
-        gap: 0.75rem;
+        gap: 0.85rem;
+        background:
+          linear-gradient(0deg, rgba(8, 7, 32, 0.85), rgba(4, 5, 22, 0.95));
       }
 
       .chat-input textarea {
         width: 100%;
-        min-height: 110px;
+        min-height: 120px;
         resize: vertical;
-        padding: 1rem;
-        border-radius: 14px;
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        background: rgba(4, 12, 22, 0.68);
+        padding: 0.9rem 1rem;
+        border-radius: 6px;
+        border: 3px solid rgba(8, 197, 255, 0.55);
+        background:
+          repeating-linear-gradient(
+            0deg,
+            rgba(6, 14, 45, 0.92),
+            rgba(6, 14, 45, 0.92) 18px,
+            rgba(8, 197, 255, 0.12) 18px,
+            rgba(8, 197, 255, 0.12) 20px
+          );
         color: inherit;
         font: inherit;
+        letter-spacing: 0.03em;
       }
 
       .chat-input textarea:focus {
-        outline: 2px solid rgba(79, 156, 255, 0.6);
-        outline-offset: 2px;
+        outline: 3px solid rgba(244, 60, 255, 0.65);
+        outline-offset: 4px;
       }
 
       .chat-actions {
@@ -207,94 +302,134 @@
       }
 
       .chat-actions .hint {
-        font-size: 0.8rem;
+        font-size: 0.75rem;
         color: var(--text-secondary);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
       }
 
       .button {
         appearance: none;
-        border: none;
-        border-radius: 999px;
-        padding: 0.75rem 1.6rem;
-        font-size: 0.95rem;
-        font-weight: 600;
-        letter-spacing: 0.04em;
+        border: 3px solid var(--panel-border-inner);
+        border-radius: 6px;
+        padding: 0.65rem 1.8rem;
+        font-size: 0.85rem;
+        font-family: var(--font-heading);
+        letter-spacing: 0.1em;
         cursor: pointer;
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        background: rgba(14, 9, 52, 0.9);
+        color: var(--text-primary);
+        box-shadow: 4px 4px 0 rgba(8, 7, 32, 0.85);
+        transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+        text-transform: uppercase;
       }
 
       .button.primary {
-        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-        color: #041024;
-        box-shadow: 0 12px 24px rgba(79, 156, 255, 0.35);
+        border-color: rgba(8, 197, 255, 0.75);
+        background: linear-gradient(135deg, rgba(8, 197, 255, 0.9), rgba(244, 241, 61, 0.95));
+        color: #130833;
       }
 
       .button.secondary {
-        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(244, 60, 255, 0.6);
+        background: linear-gradient(135deg, rgba(47, 7, 66, 0.9), rgba(24, 5, 48, 0.9));
         color: var(--text-primary);
+      }
+
+      .button:not(:disabled):hover {
+        transform: translate(-2px, -2px);
+        box-shadow: 6px 6px 0 rgba(8, 7, 32, 0.9);
+        filter: brightness(1.05);
       }
 
       .button:disabled {
         opacity: 0.6;
         cursor: progress;
-        box-shadow: none;
-      }
-
-      .button:not(:disabled):hover {
-        transform: translateY(-1px);
+        box-shadow: 0 0 0 rgba(0, 0, 0, 0);
       }
 
       .sidebar {
         display: grid;
-        gap: 1.25rem;
+        gap: 1.5rem;
         align-content: start;
       }
 
       .sidebar section {
-        padding: 1.25rem 1.5rem;
+        padding: 1.35rem 1.6rem;
+        background:
+          linear-gradient(90deg, rgba(8, 197, 255, 0.12) 0%, rgba(8, 7, 32, 0.75) 8%, rgba(8, 7, 32, 0.75) 92%, rgba(244, 60, 255, 0.12) 100%);
+        border: 3px solid rgba(249, 241, 127, 0.45);
+        box-shadow: inset 0 0 0 2px rgba(8, 197, 255, 0.35), 6px 6px 0 rgba(8, 7, 32, 0.85);
       }
 
       .sidebar h3 {
-        margin: 0 0 0.75rem;
-        font-size: 0.95rem;
+        margin: 0 0 0.85rem;
+        font-size: 0.9rem;
         text-transform: uppercase;
-        letter-spacing: 0.12em;
-        color: var(--text-secondary);
+        letter-spacing: 0.16em;
+        font-family: var(--font-heading);
+        color: var(--accent);
+        text-shadow: 3px 3px 0 rgba(10, 3, 33, 0.85);
       }
 
       .sidebar label {
         display: grid;
         gap: 0.35rem;
-        margin-bottom: 0.85rem;
+        margin-bottom: 1rem;
         font-size: 0.9rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
       }
 
       .sidebar input[type="url"],
       .sidebar input[type="number"],
       .sidebar textarea {
-        padding: 0.65rem 0.75rem;
-        border-radius: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        background: rgba(8, 14, 24, 0.75);
+        padding: 0.6rem 0.75rem;
+        border-radius: 6px;
+        border: 3px solid rgba(244, 60, 255, 0.45);
+        background:
+          repeating-linear-gradient(
+            0deg,
+            rgba(5, 10, 34, 0.95),
+            rgba(5, 10, 34, 0.95) 16px,
+            rgba(244, 60, 255, 0.12) 16px,
+            rgba(244, 60, 255, 0.12) 18px
+          );
         color: inherit;
         font: inherit;
       }
 
+      .sidebar textarea {
+        min-height: 130px;
+        resize: vertical;
+      }
+
+      .sidebar input[type="url"]:focus,
+      .sidebar input[type="number"]:focus,
+      .sidebar textarea:focus {
+        outline: 3px solid rgba(8, 197, 255, 0.65);
+        outline-offset: 4px;
+      }
+
       .sidebar input[type="range"] {
         accent-color: var(--accent);
+        width: 100%;
       }
 
       .temperature-value {
         font-variant-numeric: tabular-nums;
-        font-size: 0.85rem;
-        color: var(--text-secondary);
+        font-size: 0.9rem;
+        color: var(--text-primary);
+        text-shadow: 2px 2px 0 rgba(10, 3, 33, 0.8);
       }
 
       footer {
-        padding: 1.5rem 1rem 2rem;
+        padding: 1.75rem 1rem 2.25rem;
         text-align: center;
         color: var(--text-secondary);
         font-size: 0.85rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
       }
 
       @media (max-width: 960px) {
