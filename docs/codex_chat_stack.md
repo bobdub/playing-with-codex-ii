@@ -26,6 +26,8 @@
    ```bash
    export LLAMA_MODEL_PATH="$(pwd)/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
    export LLAMA_CPP_THREADS="$(nproc)"
+   # Comma-separated list of allowed web origins for the FastAPI CORS policy
+   export FRONTEND_ORIGINS="http://localhost:3000,http://127.0.0.1:3000"
    ```
 
 ## Backend Code
@@ -76,5 +78,5 @@ The static UI in [`frontend/index.html`](../frontend/index.html) offers a lightw
 ## Troubleshooting
 - **Model file not found**: Ensure the GGUF file exists at `models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf` or set `LLAMA_MODEL_PATH` to the correct absolute path.
 - **Slow responses on CPU**: Lower `max_tokens` in the request or export `LLAMA_CPP_THREADS=4` (or similar) to balance load.
-- **CORS errors when hosting elsewhere**: Update the `allow_origins` list in `backend/app.py` to include your front-end host.
+- **CORS errors when hosting elsewhere**: Update the `FRONTEND_ORIGINS` environment variable (comma separated) to include your front-end host before starting the backend.
 - **Port conflicts**: Change the ports passed to `uvicorn` and `python -m http.server`, then update the fetch URL in `frontend/index.html` accordingly.

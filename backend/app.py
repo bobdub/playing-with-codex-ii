@@ -49,10 +49,18 @@ class ChatResponse(BaseModel):
     reply: str
 
 
+DEFAULT_ALLOWED_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+_frontend_origins_env = os.environ.get("FRONTEND_ORIGINS")
+ALLOWED_ORIGINS = (
+    [origin.strip() for origin in _frontend_origins_env.split(",") if origin.strip()]
+    if _frontend_origins_env
+    else DEFAULT_ALLOWED_ORIGINS
+)
+
 app = FastAPI(title="Local LLM Chat Backend")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
