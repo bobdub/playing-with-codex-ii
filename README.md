@@ -1,25 +1,73 @@
 # playing-with-codex-ii
 
-create a website where we can talk with an llm
+Create a lightweight website that chats with a locally hosted large language
+model (LLM).
 
-## Why this Hugging Face approach will succeed
+## Repository layout
 
-Previous attempts at installing Hugging Face tooling stalled because they
-expected a long-running service or secret API keys that were not available in
-the execution environment. The revised guidance keeps everything inside the
-constraints of this repository:
+The project is deliberately small so it can run entirely on a developer's
+laptop or inside a Codespaces-style container:
 
-1. **Local-only dependencies.** The walkthrough uses `pip` to install the
-   lightweight `huggingface_hub` client and streamlit-based UIs directly inside
-   the container instead of relying on remote provisioning scripts that may not
-   exist.
-2. **No external secrets.** All examples rely on public models that can be
-   downloaded anonymously via `huggingface-cli` login with the `--token` flag
-   omitted. This avoids the Codex API key requirement that caused earlier
-   failures.
-3. **Documented verification steps.** After installation, run `huggingface-cli
-   whoami` and `python -m streamlit hello` to confirm that both the client and a
-   simple UI execute correctly in this sandboxed environment.
+| Path | Purpose |
+| --- | --- |
+| `backend/app.py` | FastAPI service exposing a `/chat` endpoint backed by [`llama.cpp`](https://github.com/ggerganov/llama.cpp). |
+| `frontend/index.html` | Static HTML/JS client that renders the conversation and POSTs user input to the backend. |
+| `models/` | Expected location for downloaded `.gguf` model weights. |
 
-By following these environment-aware steps, the setup no longer depends on the
-missing infrastructure that led to prior installation attempts failing.
+## Prerequisites
+
+1. **Python 3.9+** with `pip`.
+2. **C compiler toolchain** (needed by `llama-cpp-python`). On Debian/Ubuntu run
+   `sudo apt-get update && sudo apt-get install build-essential`.
+3. **A GGUF model file.** Tiny models such as
+   [`TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF`](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF)
+   work well for experimentation.
+
+Download a model into `models/` or point the `LLAMA_MODEL_PATH` environment
+variable at your preferred `.gguf` file before starting the backend.
+
+```bash
+mkdir -p models
+wget -O models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
+  https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/TinyLlama-1.1B-Chat-v1.0.Q4_K_M.gguf
+```
+
+## Backend setup
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install fastapi uvicorn "llama-cpp-python==0.2.*"
+
+# Optional: override if your model lives elsewhere
+export LLAMA_MODEL_PATH=/absolute/path/to/model.gguf
+
+uvicorn backend.app:app --reload --port 8000
+```
+
+The service validates that the model file exists at startup and will raise a
+clear error if it cannot be located. Adjust `LLAMA_CPP_THREADS` to tune CPU
+usage.
+
+## Frontend setup
+
+The frontend is framework-free HTML that only requires a static file server:
+
+```bash
+cd frontend
+python -m http.server 3000
+```
+
+Open <http://localhost:3000> and start chatting. The page assumes the backend is
+reachable at `http://localhost:8000`; edit `frontend/index.html` if you use a
+different host or port.
+
+## Customisation ideas
+
+* Seed the conversation with a system message in `frontend/index.html` for a
+  custom persona.
+* Expose additional generation parameters such as `top_p` or `repeat_penalty`
+  by extending the `ChatRequest` model in `backend/app.py`.
+* Deploy behind HTTPS by placing the FastAPI app behind a proxy like Caddy or
+  nginx and adjusting CORS origins accordingly.
