@@ -1,13 +1,16 @@
 """FastAPI backend that exposes a chat endpoint backed by llama.cpp."""
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, validator
 from llama_cpp import Llama
 import threading
 
@@ -19,8 +22,16 @@ _MODEL_ENV_VAR = "LLAMA_MODEL_PATH"
 class ChatMessage(BaseModel):
     """Single message from the conversation history."""
 
-    role: str = Field(description="Role of the speaker: system, user, or assistant")
+    role: Literal["system", "user", "assistant"] = Field(
+        description="Role of the speaker: system, user, or assistant"
+    )
     content: str = Field(description="Natural language content of the message")
+
+    @validator("content")
+    def _validate_content(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("Message content must be a non-empty string.")
+        return value
 
 
 class ChatRequest(BaseModel):
@@ -71,6 +82,82 @@ _current_model_path: Optional[Path] = None
 _model_lock = threading.Lock()
 
 
+def _resolve_concurrency_limit() -> int:
+    """Return a sane concurrency limit parsed from the environment."""
+
+    raw_value = os.environ.get("LLAMA_MAX_CONCURRENCY")
+    if raw_value is None:
+        return 1
+    try:
+        parsed = int(raw_value)
+    except ValueError:
+        return 1
+    return parsed if parsed > 0 else 1
+
+
+_request_semaphore = asyncio.Semaphore(_resolve_concurrency_limit())
+_REQUEST_QUEUE_TIMEOUT = float(os.environ.get("LLAMA_REQUEST_QUEUE_TIMEOUT", "10"))
+
+
+class ChatServiceError(Exception):
+    """Application-level error that can be surfaced to the client."""
+
+    def __init__(self, status_code: int, message: str, code: str) -> None:
+        self.status_code = status_code
+        self.message = message
+        self.code = code
+
+
+@app.exception_handler(ChatServiceError)
+async def handle_chat_service_error(
+    request: Request, exc: ChatServiceError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": {"code": exc.code, "message": exc.message}},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_validation_error(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "validation_error",
+                "message": "Invalid request payload.",
+                "details": exc.errors(),
+            }
+        },
+    )
+
+
+@app.exception_handler(HTTPException)
+async def handle_http_exception(request: Request, exc: HTTPException) -> JSONResponse:
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": {"code": "http_error", "message": detail}},
+    )
+
+
+@app.exception_handler(Exception)
+async def handle_unexpected_exception(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "code": "internal_server_error",
+                "message": "An unexpected error occurred.",
+            }
+        },
+    )
+
+
 def _resolve_model_path() -> Path:
     """Return the model path requested by the current environment."""
 
@@ -117,25 +204,58 @@ def preload_model() -> None:
         _load_model()
 
 
-@app.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest) -> ChatResponse:
-    """Generate a chat response using the local model."""
+def _invoke_chat_completion(
+    messages: List[ChatMessage], max_tokens: Optional[int], temperature: Optional[float]
+):
+    """Invoke llama.cpp inside a thread to avoid blocking the event loop."""
 
     with _model_lock:
         llama = _load_model()
+        return llama.create_chat_completion(
+            messages=[message.dict() for message in messages],
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest) -> ChatResponse:
+    """Generate a chat response using the local model."""
+
+    try:
+        await asyncio.wait_for(_request_semaphore.acquire(), timeout=_REQUEST_QUEUE_TIMEOUT)
+    except asyncio.TimeoutError as exc:
+        raise ChatServiceError(
+            status_code=503,
+            message="The chat service is busy. Please retry shortly.",
+            code="server_busy",
+        ) from exc
+
+    try:
         try:
-            completion = llama.create_chat_completion(
-                messages=[message.dict() for message in request.messages],
-                max_tokens=request.max_tokens,
-                temperature=request.temperature,
+            completion = await asyncio.to_thread(
+                _invoke_chat_completion,
+                request.messages,
+                request.max_tokens,
+                request.temperature,
             )
         except ValueError as exc:  # Raised by llama.cpp for malformed input
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise ChatServiceError(
+                status_code=400,
+                message=str(exc),
+                code="invalid_request",
+            ) from exc
+    finally:
+        _request_semaphore.release()
 
     try:
         reply_text = completion["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError, TypeError) as exc:
-        raise HTTPException(status_code=500, detail=f"Malformed model response: {exc}")
+        raise ChatServiceError(
+            status_code=502,
+            message=f"Malformed model response: {exc}",
+            code="model_response_error",
+        ) from exc
 
     return ChatResponse(reply=reply_text)
 
