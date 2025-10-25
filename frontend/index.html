@@ -158,9 +158,10 @@
 
       .status-chip {
         display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        padding: 0.4rem 0.8rem;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.15rem;
+        padding: 0.45rem 0.9rem;
         border-radius: 999px;
         font-size: 0.7rem;
         letter-spacing: 0.08em;
@@ -168,6 +169,14 @@
         color: var(--accent);
         border: 2px solid rgba(244, 60, 255, 0.4);
         box-shadow: 2px 2px 0 rgba(4, 9, 48, 0.75);
+        min-width: 170px;
+        cursor: default;
+      }
+
+      .status-chip > span {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
       }
 
       .status-chip[data-state="error"] {
@@ -185,6 +194,17 @@
       .status-chip svg {
         width: 14px;
         height: 14px;
+      }
+
+      .status-chip[data-interactive="true"] {
+        cursor: pointer;
+      }
+
+      .status-chip .status-hint {
+        font-size: 0.6rem;
+        letter-spacing: 0.12em;
+        opacity: 0.8;
+        text-transform: uppercase;
       }
 
       #history {
@@ -507,7 +527,14 @@
           <h3>Connection</h3>
           <label>
             Backend URL
-            <input type="url" id="backend-url" name="backend-url" value="http://localhost:8000" spellcheck="false" />
+            <input
+              type="url"
+              id="backend-url"
+              name="backend-url"
+              value=""
+              placeholder="http://localhost:8000"
+              spellcheck="false"
+            />
           </label>
           <p style="margin: 0; font-size: 0.8rem; color: var(--text-secondary);">
             Ensure the FastAPI backend is running and accessible from your browser.
@@ -554,6 +581,11 @@
     <footer>
       TinyLlama runs entirely on local hardware. No conversation data ever leaves this machine.
     </footer>
+    <script id="app-config" type="application/json">
+      {
+        "backendBaseUrl": "http://localhost:8000"
+      }
+    </script>
     <script>
       const historyEl = document.getElementById("history");
       const form = document.getElementById("chat-form");
@@ -570,6 +602,7 @@
       const conversation = [];
       let backendHealthy = false;
       let healthCheckController = null;
+      let activeStreamController = null;
 
       function statusIcon(state) {
         switch (state) {
@@ -599,8 +632,10 @@
 
       function setStatus(text, state = "ready", tooltip = "") {
         statusChip.dataset.state = state;
-        statusChip.innerHTML = `${statusIcon(state)}${text}`;
-        statusChip.title = tooltip || "";
+        const retryHint = state === "error" ? '<span class="status-hint">Tap to retry</span>' : "";
+        statusChip.dataset.interactive = state === "error" ? "true" : "false";
+        statusChip.innerHTML = `<span>${statusIcon(state)}${text}</span>${retryHint}`;
+        statusChip.title = tooltip || (state === "error" ? "Click to retry the health check" : "");
       }
 
       function describeNetworkIssue(error, targetUrl = backendUrlEl.value) {
@@ -645,8 +680,8 @@
         };
       }
 
-      async function checkBackend({ announce = true } = {}) {
-        const rawUrl = backendUrlEl.value.trim();
+      async function checkBackend({ announce = true, url } = {}) {
+        const rawUrl = (url ?? backendUrlEl.value).trim();
         if (!rawUrl) {
           backendHealthy = false;
           if (announce) setStatus("Enter a backend URL", "error");
@@ -692,6 +727,45 @@
         }
       }
 
+      function showRequestError(element, summary, detail) {
+        element.dataset.pending = "false";
+        element.dataset.role = "error";
+        element.querySelector("strong").textContent = roleLabel("error");
+        element.querySelector("p").textContent = detail || summary || "Request failed";
+        setStatus(summary || "Request failed", "error", detail);
+      }
+
+      async function loadConfiguration() {
+        const config = {};
+        const scriptEl = document.getElementById("app-config");
+        if (scriptEl && scriptEl.textContent) {
+          try {
+            Object.assign(config, JSON.parse(scriptEl.textContent));
+          } catch (error) {
+            console.warn("Unable to parse inline configuration", error);
+          }
+        }
+
+        if (!config.backendBaseUrl) {
+          try {
+            const response = await fetch("/config.json", {
+              cache: "no-store",
+              headers: { Accept: "application/json" },
+            });
+            if (response.ok) {
+              const data = await response.json();
+              if (data && typeof data.backendBaseUrl === "string") {
+                config.backendBaseUrl = data.backendBaseUrl;
+              }
+            }
+          } catch (error) {
+            console.warn("No remote configuration available", error);
+          }
+        }
+
+        return config;
+      }
+
       function roleLabel(role) {
         switch (role) {
           case "user":
@@ -721,18 +795,34 @@
         }
       }
 
-      function restoreSettings() {
+      function restoreSettings(defaults = {}) {
         try {
           const raw = localStorage.getItem(STORAGE_KEY);
-          if (!raw) return;
+          if (!raw) {
+            if (defaults.backendUrl && !backendUrlEl.value) {
+              backendUrlEl.value = defaults.backendUrl;
+            }
+            updateTemperatureLabel();
+            return;
+          }
           const saved = JSON.parse(raw);
-          if (saved.backendUrl) backendUrlEl.value = saved.backendUrl;
+          if (saved.backendUrl) {
+            backendUrlEl.value = saved.backendUrl;
+          } else if (defaults.backendUrl && !backendUrlEl.value) {
+            backendUrlEl.value = defaults.backendUrl;
+          }
           if (saved.temperature) temperatureEl.value = saved.temperature;
           if (saved.maxTokens) maxTokensEl.value = saved.maxTokens;
           if (typeof saved.systemPrompt === "string") systemPromptEl.value = saved.systemPrompt;
           updateTemperatureLabel();
         } catch (error) {
           console.warn("Unable to restore settings", error);
+        }
+      }
+
+      function applyConfigurationDefaults(config) {
+        if (config.backendBaseUrl && !backendUrlEl.value) {
+          backendUrlEl.value = config.backendBaseUrl;
         }
       }
 
@@ -782,55 +872,44 @@
         setStatus(statusText);
       }
 
-      async function sendMessage(event) {
-        event.preventDefault();
-        const userPrompt = promptEl.value.trim();
-        if (!userPrompt) return;
+      function parseSseBlock(block) {
+        const lines = block.split(/\r?\n/);
+        let eventName = null;
+        const dataLines = [];
+        for (const line of lines) {
+          if (!line) continue;
+          if (line.startsWith(":")) continue;
+          if (line.startsWith("event:")) {
+            eventName = line.slice(6).trim() || null;
+          } else if (line.startsWith("data:")) {
+            dataLines.push(line.slice(5).trimStart());
+          }
+        }
+        return { event: eventName, data: dataLines.join("\n") };
+      }
 
-        ensureSystemMessage();
-        createMessageElement("user", userPrompt);
-        conversation.push({ role: "user", content: userPrompt });
-        promptEl.value = "";
-        promptEl.focus();
-
-        const pendingEl = createMessageElement("assistant", "Thinking…", { pending: true });
-        form.querySelector("button[type='submit']").disabled = true;
-        resetConversationBtn.disabled = true;
-        setStatus("Waiting for response", "pending");
-
-        let chatUrl;
+      async function requestLegacyChat(baseUrl, payload, pendingEl) {
+        let legacyUrl;
         try {
-          chatUrl = new URL("/chat", backendUrlEl.value).toString();
+          legacyUrl = new URL("/chat", baseUrl).toString();
         } catch (error) {
-          const { summary, detail } = describeNetworkIssue(error, backendUrlEl.value);
-          pendingEl.dataset.pending = "false";
-          pendingEl.dataset.role = "error";
-          pendingEl.querySelector("strong").textContent = roleLabel("error");
-          pendingEl.querySelector("p").textContent = `Network issue: ${detail}`;
-          setStatus(summary, "error", detail);
+          const { summary, detail } = describeNetworkIssue(error, baseUrl);
+          showRequestError(pendingEl, summary, `Network issue: ${detail}`);
           backendHealthy = false;
           return;
         }
 
         try {
-          const response = await fetch(chatUrl, {
+          const response = await fetch(legacyUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              messages: conversation.map(({ role, content }) => ({ role, content })),
-              max_tokens: Number.parseInt(maxTokensEl.value, 10),
-              temperature: Number.parseFloat(temperatureEl.value),
-            }),
+            body: JSON.stringify(payload),
           });
 
           if (!response.ok) {
             const errorText = await response.text();
-            pendingEl.dataset.role = "error";
-            pendingEl.dataset.pending = "false";
-            pendingEl.querySelector("strong").textContent = roleLabel("error");
             const detail = (errorText || "").trim() || `Status ${response.status}`;
-            pendingEl.querySelector("p").textContent = `Request failed: ${detail}`;
-            setStatus("Backend responded with an error", "error", detail);
+            showRequestError(pendingEl, "Backend responded with an error", `Request failed: ${detail}`);
             backendHealthy = true;
             return;
           }
@@ -843,16 +922,169 @@
           backendHealthy = true;
           setStatus("Reply received");
         } catch (error) {
+          const { summary, detail } = describeNetworkIssue(error, baseUrl);
+          showRequestError(pendingEl, summary, `Network issue: ${detail}`);
+          backendHealthy = false;
+        }
+      }
+
+      async function sendMessage(event) {
+        event.preventDefault();
+        const userPrompt = promptEl.value.trim();
+        if (!userPrompt) return;
+
+        ensureSystemMessage();
+        createMessageElement("user", userPrompt);
+        conversation.push({ role: "user", content: userPrompt });
+        promptEl.value = "";
+        promptEl.focus();
+
+        const pendingEl = createMessageElement("assistant", "", { pending: true });
+        form.querySelector("button[type='submit']").disabled = true;
+        resetConversationBtn.disabled = true;
+        setStatus("Waiting for response", "pending");
+
+        const baseUrl = backendUrlEl.value.trim();
+        let streamUrl;
+        try {
+          streamUrl = new URL("/chat/stream", baseUrl).toString();
+        } catch (error) {
+          const { summary, detail } = describeNetworkIssue(error, baseUrl);
+          showRequestError(pendingEl, summary, `Network issue: ${detail}`);
+          backendHealthy = false;
+          return;
+        }
+
+        const payload = {
+          messages: conversation.map(({ role, content }) => ({ role, content })),
+          max_tokens: Number.parseInt(maxTokensEl.value, 10),
+          temperature: Number.parseFloat(temperatureEl.value),
+        };
+
+        const controller = new AbortController();
+        activeStreamController = controller;
+
+        try {
+          const response = await fetch(streamUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "text/event-stream",
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+          });
+
+          if (response.status === 404) {
+            await requestLegacyChat(baseUrl, payload, pendingEl);
+            return;
+          }
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            const detail = (errorText || "").trim() || `Status ${response.status}`;
+            showRequestError(pendingEl, "Backend responded with an error", `Request failed: ${detail}`);
+            backendHealthy = true;
+            return;
+          }
+
+          const contentType = response.headers.get("content-type") || "";
+          if (!contentType.includes("text/event-stream")) {
+            const errorText = await response.text();
+            const detail = (errorText || "").trim() || "Unexpected response format";
+            showRequestError(
+              pendingEl,
+              "Unexpected response",
+              `Expected a streaming response. ${detail}`,
+            );
+            backendHealthy = false;
+            return;
+          }
+
+          if (!response.body) {
+            throw new Error("Streaming not supported by this browser.");
+          }
+
+          setStatus("Streaming reply…", "pending");
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let assistantReply = "";
+          let streamFailed = false;
+          let streamComplete = false;
+
+          while (!streamComplete) {
+            const { value, done } = await reader.read();
+            if (done) {
+              streamComplete = true;
+            } else if (value) {
+              buffer += decoder.decode(value, { stream: true });
+            }
+
+            let boundary = buffer.indexOf("\n\n");
+            while (boundary !== -1) {
+              const rawEvent = buffer.slice(0, boundary);
+              buffer = buffer.slice(boundary + 2);
+              const { event, data } = parseSseBlock(rawEvent);
+              if (!data) {
+                boundary = buffer.indexOf("\n\n");
+                continue;
+              }
+
+              try {
+                const parsed = JSON.parse(data);
+                if (event === "error") {
+                  const message = parsed.message || "Streaming error";
+                  const detail = parsed.detail || parsed.message || "Stream terminated";
+                  showRequestError(pendingEl, message, detail);
+                  backendHealthy = false;
+                  streamFailed = true;
+                  streamComplete = true;
+                  break;
+                }
+
+                if (event === "done") {
+                  streamComplete = true;
+                  break;
+                }
+
+                if (parsed.delta) {
+                  assistantReply += parsed.delta;
+                  pendingEl.querySelector("p").textContent = assistantReply;
+                }
+              } catch (error) {
+                console.warn("Unable to parse SSE payload", error, data);
+              }
+
+              boundary = buffer.indexOf("\n\n");
+            }
+
+            if (streamFailed) break;
+          }
+
+          decoder.decode();
+
+          if (streamFailed) {
+            return;
+          }
+
           pendingEl.dataset.pending = "false";
-          pendingEl.dataset.role = "error";
-          pendingEl.querySelector("strong").textContent = roleLabel("error");
+          const trimmed = assistantReply.trim();
+          const displayText = trimmed || assistantReply || "(Empty response)";
+          pendingEl.querySelector("p").textContent = displayText;
+          conversation.push({ role: "assistant", content: trimmed });
+          backendHealthy = true;
+          setStatus("Reply received");
+        } catch (error) {
           const { summary, detail } = describeNetworkIssue(error, backendUrlEl.value);
-          pendingEl.querySelector("p").textContent = `Network issue: ${detail}`;
-          setStatus(summary, "error", detail);
+          showRequestError(pendingEl, summary, `Network issue: ${detail}`);
           backendHealthy = false;
         } finally {
           form.querySelector("button[type='submit']").disabled = false;
           resetConversationBtn.disabled = false;
+          if (activeStreamController === controller) {
+            activeStreamController = null;
+          }
         }
       }
 
@@ -885,6 +1117,12 @@
         }
       });
 
+      statusChip.addEventListener("click", () => {
+        if (statusChip.dataset.interactive === "true") {
+          checkBackend({ announce: true });
+        }
+      });
+
       window.addEventListener("online", () => {
         if (backendUrlEl.value.trim()) {
           checkBackend({ announce: true });
@@ -896,13 +1134,19 @@
         setStatus("Browser offline", "error", "The browser is offline. Restore connectivity to reach the backend.");
       });
 
-      restoreSettings();
-      ensureSystemMessage();
-      if (conversation[0] && conversation[0].role === "system") {
-        createMessageElement("system", conversation[0].content);
+      async function bootstrap() {
+        const config = await loadConfiguration();
+        applyConfigurationDefaults(config);
+        restoreSettings({ backendUrl: config.backendBaseUrl });
+        ensureSystemMessage();
+        if (conversation[0] && conversation[0].role === "system") {
+          createMessageElement("system", conversation[0].content);
+        }
+        await checkBackend({ announce: true, url: backendUrlEl.value });
+        promptEl.focus();
       }
-      checkBackend({ announce: true });
-      promptEl.focus();
+
+      bootstrap();
     </script>
   </body>
 </html>
