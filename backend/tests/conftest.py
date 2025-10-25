@@ -1,6 +1,8 @@
 """Pytest configuration installing lightweight stubs when dependencies are unavailable."""
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import inspect
 import sys
 import types
@@ -98,9 +100,10 @@ class _HTTPException(Exception):
 
 
 class _Response:
-    def __init__(self, status_code: int, content: Any) -> None:
+    def __init__(self, status_code: int, content: Any, stream: Any | None = None) -> None:
         self.status_code = status_code
         self._content = content
+        self._stream = stream
 
     def json(self) -> Any:
         if isinstance(self._content, _BaseModel):
@@ -109,11 +112,35 @@ class _Response:
             return self._content.dict()
         return self._content
 
+    def iter_lines(self):
+        if self._stream is None:
+            return iter(())
+
+        async def consume_async(iterator):
+            collected: list[str] = []
+            try:
+                async for item in iterator:
+                    collected.append(str(item))
+            except asyncio.CancelledError:  # pragma: no cover - background task cleanup
+                pass
+            return collected
+
+        if hasattr(self._stream, "__aiter__"):
+            chunks = asyncio.run(consume_async(self._stream))
+        else:
+            chunks = [str(item) for item in self._stream]
+
+        lines: list[str] = []
+        for chunk in chunks:
+            lines.extend(chunk.splitlines())
+        return iter(lines)
+
 
 class _FastAPI:
     def __init__(self, **_: Any) -> None:
         self._routes: dict[tuple[str, str], Any] = {}
         self._startup_handlers: list[types.FunctionType] = []
+        self._exception_handlers: dict[type[BaseException], types.FunctionType] = {}
 
     def add_middleware(self, *_: Any, **__: Any) -> None:  # pragma: no cover - noop stub
         return None
@@ -136,6 +163,13 @@ class _FastAPI:
     def get(self, path: str, **_: Any):
         def decorator(func):
             self._routes[("GET", path)] = func
+            return func
+
+        return decorator
+
+    def exception_handler(self, exc_type):
+        def decorator(func):
+            self._exception_handlers[exc_type] = func
             return func
 
         return decorator
@@ -167,21 +201,57 @@ class _TestClient:
         if parameters:
             (param,) = parameters.values()
             annotation = type_hints.get(param.name, param.annotation)
+            if isinstance(annotation, str):
+                annotation = handler.__globals__.get(annotation, annotation)
             if annotation is inspect._empty:
                 args.append(json)
             else:
-                args.append(_coerce_value(annotation, json))
+                coerced = _coerce_value(annotation, json)
+                if (
+                    isinstance(annotation, type)
+                    and issubclass(annotation, _BaseModel)
+                    and isinstance(coerced, dict)
+                ):
+                    coerced = annotation(**coerced)
+                args.append(coerced)
         try:
             result = handler(*args)
+            if inspect.iscoroutine(result):
+                result = asyncio.run(result)
         except _HTTPException as exc:
             return _Response(exc.status_code, {"detail": exc.detail})
-        return _Response(200, result)
+        except Exception as exc:  # pragma: no cover - allow custom handlers
+            handler_fn = self.app._exception_handlers.get(type(exc))
+            if handler_fn is not None:
+                response = handler_fn(None, exc)
+                if inspect.iscoroutine(response):
+                    response = asyncio.run(response)
+                return _Response(response.status_code, response.json())  # type: ignore[attr-defined]
+            raise
+
+        status_code = 200
+        content = result
+        stream = None
+
+        if hasattr(result, "status_code") and hasattr(result, "content"):
+            status_code = getattr(result, "status_code", 200)
+            stream = getattr(result, "content")
+            content = getattr(result, "content", None)
+            if stream is None:
+                content = {}
+
+        return _Response(status_code, content, stream=stream)
 
     def post(self, path: str, json: Any | None = None) -> _Response:
         return self._call_route("POST", path, json=json)
 
     def get(self, path: str) -> _Response:  # pragma: no cover - convenience
         return self._call_route("GET", path)
+
+    @contextlib.contextmanager
+    def stream(self, method: str, path: str, json: Any | None = None):
+        response = self._call_route(method, path, json=json)
+        yield response
 
 
 class _CORSMiddleware:

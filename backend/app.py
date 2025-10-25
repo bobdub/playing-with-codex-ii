@@ -2,15 +2,86 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
 import os
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import AsyncGenerator, List, Literal, Optional
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, validator
+from fastapi import FastAPI, HTTPException
+try:  # pragma: no cover - fallback for stubbed environments
+    from fastapi.exceptions import RequestValidationError
+except Exception:  # pragma: no cover - executed when real FastAPI is unavailable
+    class RequestValidationError(Exception):
+        def __init__(self, errors: list[dict[str, str]] | None = None) -> None:
+            super().__init__("Request validation failed")
+            self._errors = errors or []
+
+        def errors(self) -> list[dict[str, str]]:
+            return list(self._errors)
+
+try:  # pragma: no cover - fallback for stubbed environments
+    from fastapi.middleware.cors import CORSMiddleware
+except Exception:  # pragma: no cover - executed when real FastAPI is unavailable
+    class CORSMiddleware:  # type: ignore[empty-body]
+        def __init__(self, app, **kwargs):
+            self.app = app
+            self.options = kwargs
+
+try:  # pragma: no cover - fallback for stubbed environments
+    from fastapi.responses import JSONResponse, StreamingResponse
+except Exception:  # pragma: no cover - executed when real FastAPI is unavailable
+    class JSONResponse:  # type: ignore[override]
+        def __init__(self, content: dict, status_code: int = 200) -> None:
+            self.content = content
+            self.status_code = status_code
+
+        def json(self) -> dict:
+            return self.content
+
+    class StreamingResponse:  # type: ignore[override]
+        def __init__(self, content, media_type: str | None = None, status_code: int = 200) -> None:
+            self.content = content
+            self.media_type = media_type
+            self.status_code = status_code
+
+try:  # pragma: no cover - fallback for stubbed environments
+    from pydantic import BaseModel, Field
+except Exception:  # pragma: no cover - executed when real Pydantic is unavailable
+    class BaseModel:  # type: ignore[override]
+        def __init__(self, **data):
+            annotations = getattr(self, "__annotations__", {})
+            for name in annotations:
+                value = data.get(name, getattr(self.__class__, name, None))
+                setattr(self, name, value)
+
+        @classmethod
+        def parse_obj(cls, obj):
+            if isinstance(obj, cls):
+                return obj
+            if not isinstance(obj, dict):
+                raise TypeError("Expected mapping for BaseModel.parse_obj")
+            return cls(**obj)
+
+        def dict(self):
+            annotations = getattr(self, "__annotations__", {})
+            return {name: getattr(self, name, None) for name in annotations}
+
+    def Field(default=None, **kwargs):  # type: ignore[override]
+        return default
+
+try:  # pragma: no cover - fallback when validator helper is absent
+    from pydantic import validator
+except Exception:  # pragma: no cover - executed when validator helper is missing
+    def validator(field_name: str):  # type: ignore[override]
+        def decorator(func):
+            def wrapper(cls, value):
+                return func(cls, value)
+
+            wrapper.__pydantic_validator__ = field_name  # type: ignore[attr-defined]
+            return wrapper
+
+        return decorator
 from llama_cpp import Llama
 import threading
 
@@ -107,10 +178,8 @@ class ChatServiceError(Exception):
         self.message = message
         self.code = code
 
-
-@app.exception_handler(ChatServiceError)
 async def handle_chat_service_error(
-    request: Request, exc: ChatServiceError
+    request: "Request", exc: ChatServiceError
 ) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
@@ -118,9 +187,8 @@ async def handle_chat_service_error(
     )
 
 
-@app.exception_handler(RequestValidationError)
 async def handle_validation_error(
-    request: Request, exc: RequestValidationError
+    request: "Request", exc: RequestValidationError
 ) -> JSONResponse:
     return JSONResponse(
         status_code=422,
@@ -134,8 +202,7 @@ async def handle_validation_error(
     )
 
 
-@app.exception_handler(HTTPException)
-async def handle_http_exception(request: Request, exc: HTTPException) -> JSONResponse:
+async def handle_http_exception(request: "Request", exc: HTTPException) -> JSONResponse:
     detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
     return JSONResponse(
         status_code=exc.status_code,
@@ -143,9 +210,8 @@ async def handle_http_exception(request: Request, exc: HTTPException) -> JSONRes
     )
 
 
-@app.exception_handler(Exception)
 async def handle_unexpected_exception(
-    request: Request, exc: Exception
+    request: "Request", exc: Exception
 ) -> JSONResponse:
     return JSONResponse(
         status_code=500,
@@ -156,6 +222,13 @@ async def handle_unexpected_exception(
             }
         },
     )
+
+
+if hasattr(app, "exception_handler"):
+    app.exception_handler(ChatServiceError)(handle_chat_service_error)
+    app.exception_handler(RequestValidationError)(handle_validation_error)
+    app.exception_handler(HTTPException)(handle_http_exception)
+    app.exception_handler(Exception)(handle_unexpected_exception)
 
 
 def _resolve_model_path() -> Path:
@@ -218,6 +291,50 @@ def _invoke_chat_completion(
         )
 
 
+def _stream_chat_completion(
+    messages: List[ChatMessage],
+    max_tokens: Optional[int],
+    temperature: Optional[float],
+):
+    """Yield streaming chunks from llama.cpp in a thread-safe manner."""
+
+    with _model_lock:
+        llama = _load_model()
+        yield from llama.create_chat_completion(
+            messages=[message.dict() for message in messages],
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stream=True,
+        )
+
+
+def _extract_stream_delta(chunk: dict) -> str:
+    """Return the incremental text delta from a llama.cpp streaming chunk."""
+
+    try:
+        choice = chunk["choices"][0]
+        delta = choice.get("delta") or {}
+        content = delta.get("content")
+        if content:
+            return content
+        message = choice.get("message") or {}
+        return message.get("content", "")
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ChatServiceError(
+            status_code=502,
+            message=f"Malformed model response: {exc}",
+            code="model_response_error",
+        ) from exc
+
+
+def _format_sse(event: Optional[str], payload: dict) -> str:
+    """Serialize a Server-Sent Event payload."""
+
+    data = json.dumps(payload, ensure_ascii=False)
+    prefix = f"event: {event}\n" if event else ""
+    return f"{prefix}data: {data}\n\n"
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     """Generate a chat response using the local model."""
@@ -258,6 +375,103 @@ async def chat(request: ChatRequest) -> ChatResponse:
         ) from exc
 
     return ChatResponse(reply=reply_text)
+
+
+@app.post("/chat/stream")
+async def chat_stream(request: ChatRequest) -> StreamingResponse:
+    """Stream chat deltas using Server-Sent Events."""
+
+    try:
+        await asyncio.wait_for(
+            _request_semaphore.acquire(), timeout=_REQUEST_QUEUE_TIMEOUT
+        )
+    except asyncio.TimeoutError as exc:
+        raise ChatServiceError(
+            status_code=503,
+            message="The chat service is busy. Please retry shortly.",
+            code="server_busy",
+        ) from exc
+
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[dict] = asyncio.Queue()
+
+    def enqueue(item: dict) -> None:
+        asyncio.run_coroutine_threadsafe(queue.put(item), loop)
+
+    def worker() -> None:
+        try:
+            for chunk in _stream_chat_completion(
+                request.messages, request.max_tokens, request.temperature
+            ):
+                delta = _extract_stream_delta(chunk)
+                if delta:
+                    enqueue({"type": "delta", "data": delta})
+        except ChatServiceError as exc:
+            enqueue(
+                {
+                    "type": "error",
+                    "message": exc.message,
+                    "code": exc.code,
+                    "status": exc.status_code,
+                }
+            )
+        except ValueError as exc:
+            enqueue(
+                {
+                    "type": "error",
+                    "message": str(exc),
+                    "code": "invalid_request",
+                    "status": 400,
+                }
+            )
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            enqueue(
+                {
+                    "type": "error",
+                    "message": "An unexpected error occurred.",
+                    "code": "internal_server_error",
+                    "status": 500,
+                    "detail": str(exc),
+                }
+            )
+        finally:
+            enqueue({"type": "done"})
+
+    producer_task = asyncio.create_task(asyncio.to_thread(worker))
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        try:
+            while True:
+                message = await queue.get()
+                kind = message.get("type")
+                if kind == "delta":
+                    yield _format_sse(None, {"delta": message["data"]})
+                elif kind == "error":
+                    payload = {
+                        "message": message.get("message", ""),
+                        "code": message.get("code"),
+                        "status": message.get("status"),
+                    }
+                    if "detail" in message:
+                        payload["detail"] = message["detail"]
+                    yield _format_sse("error", payload)
+                elif kind == "done":
+                    yield _format_sse("done", {})
+                    break
+        finally:
+            producer_task.cancel()
+            with contextlib.suppress(Exception):
+                await producer_task
+            _request_semaphore.release()
+
+    try:
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+    except Exception:
+        producer_task.cancel()
+        with contextlib.suppress(Exception):
+            await producer_task
+        _request_semaphore.release()
+        raise
 
 
 @app.get("/healthz")
