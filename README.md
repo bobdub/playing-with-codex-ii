@@ -82,12 +82,3 @@ system instruction to steer the assistant’s vibe.
   knobs—by extending the `ChatRequest` model in `backend/app.py`.
 * Put the FastAPI app behind HTTPS with a proxy such as Caddy or nginx and
   tweak the CORS settings to match.
-
-## Ship it as an Android app
-
-An Android wrapper lives in [`android/`](android/README.md). It packages the web
-console inside a WebView so you can install it on phones or publish it through
-the Play Store. Open the directory in Android Studio (or install Gradle 8.7+,
-generate the wrapper, and run `./gradlew assembleDebug`) to produce an APK. The
-build automatically copies the latest `frontend/index.html` so the mobile shell
-always matches the web console.
