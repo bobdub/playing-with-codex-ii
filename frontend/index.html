@@ -176,6 +176,12 @@
         border-color: rgba(255, 111, 97, 0.6);
       }
 
+      .status-chip[data-state="pending"] {
+        background: rgba(8, 197, 255, 0.18);
+        color: var(--accent);
+        border-color: rgba(8, 197, 255, 0.6);
+      }
+
       .status-chip svg {
         width: 14px;
         height: 14px;
@@ -562,6 +568,129 @@
 
       const STORAGE_KEY = "tinyllama-local-settings";
       const conversation = [];
+      let backendHealthy = false;
+      let healthCheckController = null;
+
+      function statusIcon(state) {
+        switch (state) {
+          case "error":
+            return `
+              <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5" fill="none"></circle>
+                <path d="M10 5v5m0 3.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
+              </svg>
+            `;
+          case "pending":
+            return `
+              <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.35"></circle>
+                <path d="M10 2.5a7.5 7.5 0 0 1 7.5 7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"></path>
+              </svg>
+            `;
+          default:
+            return `
+              <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5" fill="none"></circle>
+                <path d="M6.5 10.5l2.5 2.5 4.5-5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+            `;
+        }
+      }
+
+      function setStatus(text, state = "ready", tooltip = "") {
+        statusChip.dataset.state = state;
+        statusChip.innerHTML = `${statusIcon(state)}${text}`;
+        statusChip.title = tooltip || "";
+      }
+
+      function describeNetworkIssue(error, targetUrl = backendUrlEl.value) {
+        const reason = error instanceof Error ? error.message : String(error);
+        if (error?.name === "AbortError") {
+          return { summary: "Request cancelled", detail: reason };
+        }
+
+        if (targetUrl) {
+          try {
+            const parsed = new URL(targetUrl, window.location.href);
+            if (
+              window.location.protocol === "https:" &&
+              parsed.protocol === "http:" &&
+              !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(parsed.origin)
+            ) {
+              return {
+                summary: "Insecure backend blocked",
+                detail:
+                  "Browsers block HTTP APIs from HTTPS pages. Serve the backend over HTTPS or connect via localhost.",
+              };
+            }
+          } catch (parseError) {
+            return {
+              summary: "Invalid backend URL",
+              detail: parseError instanceof Error ? parseError.message : String(parseError),
+            };
+          }
+        }
+
+        if (error?.name === "TypeError" && reason.includes("Failed to fetch")) {
+          return {
+            summary: "Unable to reach backend",
+            detail:
+              "The browser could not reach the API. Confirm the server is running, the URL is correct, and CORS allows this origin.",
+          };
+        }
+
+        return {
+          summary: reason || "Unexpected error",
+          detail: reason || "No additional details",
+        };
+      }
+
+      async function checkBackend({ announce = true } = {}) {
+        const rawUrl = backendUrlEl.value.trim();
+        if (!rawUrl) {
+          backendHealthy = false;
+          if (announce) setStatus("Enter a backend URL", "error");
+          return false;
+        }
+
+        let healthUrl;
+        try {
+          healthUrl = new URL("/healthz", rawUrl).toString();
+        } catch (error) {
+          backendHealthy = false;
+          const { summary, detail } = describeNetworkIssue(error, rawUrl);
+          if (announce) setStatus(summary, "error", detail);
+          return false;
+        }
+
+        if (healthCheckController) {
+          healthCheckController.abort();
+        }
+        healthCheckController = new AbortController();
+
+        if (announce) setStatus("Checking backend…", "pending");
+
+        try {
+          const response = await fetch(healthUrl, {
+            signal: healthCheckController.signal,
+            headers: { Accept: "application/json" },
+          });
+          if (!response.ok) {
+            throw new Error(`Health check failed (${response.status})`);
+          }
+          backendHealthy = true;
+          if (announce) setStatus("Backend reachable", "ready");
+          return true;
+        } catch (error) {
+          if (healthCheckController.signal.aborted) {
+            return false;
+          }
+          backendHealthy = false;
+          const { summary, detail } = describeNetworkIssue(error, rawUrl);
+          if (announce) setStatus(summary, "error", detail);
+          return false;
+        }
+      }
 
       function roleLabel(role) {
         switch (role) {
@@ -609,25 +738,6 @@
 
       function updateTemperatureLabel() {
         temperatureValueEl.textContent = Number.parseFloat(temperatureEl.value).toFixed(2);
-      }
-
-      function setStatus(text, state = "ready") {
-        statusChip.dataset.state = state;
-        statusChip.innerHTML = state === "error"
-          ? `
-              <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5" fill="none"></circle>
-                <path d="M10 5v5m0 3.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
-              </svg>
-              ${text}
-            `
-          : `
-              <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5" fill="none"></circle>
-                <path d="M6.5 10.5l2.5 2.5 4.5-5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
-              </svg>
-              ${text}
-            `;
       }
 
       function ensureSystemMessage() {
@@ -686,10 +796,24 @@
         const pendingEl = createMessageElement("assistant", "Thinking…", { pending: true });
         form.querySelector("button[type='submit']").disabled = true;
         resetConversationBtn.disabled = true;
-        setStatus("Waiting for response");
+        setStatus("Waiting for response", "pending");
+
+        let chatUrl;
+        try {
+          chatUrl = new URL("/chat", backendUrlEl.value).toString();
+        } catch (error) {
+          const { summary, detail } = describeNetworkIssue(error, backendUrlEl.value);
+          pendingEl.dataset.pending = "false";
+          pendingEl.dataset.role = "error";
+          pendingEl.querySelector("strong").textContent = roleLabel("error");
+          pendingEl.querySelector("p").textContent = `Network issue: ${detail}`;
+          setStatus(summary, "error", detail);
+          backendHealthy = false;
+          return;
+        }
 
         try {
-          const response = await fetch(new URL("/chat", backendUrlEl.value).toString(), {
+          const response = await fetch(chatUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -704,8 +828,10 @@
             pendingEl.dataset.role = "error";
             pendingEl.dataset.pending = "false";
             pendingEl.querySelector("strong").textContent = roleLabel("error");
-            pendingEl.querySelector("p").textContent = `Request failed: ${response.status} ${errorText}`;
-            setStatus("Backend responded with an error", "error");
+            const detail = (errorText || "").trim() || `Status ${response.status}`;
+            pendingEl.querySelector("p").textContent = `Request failed: ${detail}`;
+            setStatus("Backend responded with an error", "error", detail);
+            backendHealthy = true;
             return;
           }
 
@@ -714,13 +840,16 @@
           pendingEl.dataset.pending = "false";
           pendingEl.querySelector("p").textContent = reply || "(Empty response)";
           conversation.push({ role: "assistant", content: reply });
+          backendHealthy = true;
           setStatus("Reply received");
         } catch (error) {
           pendingEl.dataset.pending = "false";
           pendingEl.dataset.role = "error";
           pendingEl.querySelector("strong").textContent = roleLabel("error");
-          pendingEl.querySelector("p").textContent = `Network issue: ${error}`;
-          setStatus("Network request failed", "error");
+          const { summary, detail } = describeNetworkIssue(error, backendUrlEl.value);
+          pendingEl.querySelector("p").textContent = `Network issue: ${detail}`;
+          setStatus(summary, "error", detail);
+          backendHealthy = false;
         } finally {
           form.querySelector("button[type='submit']").disabled = false;
           resetConversationBtn.disabled = false;
@@ -740,6 +869,9 @@
           if (element === systemPromptEl) {
             resetConversation("System instruction updated");
           }
+          if (element === backendUrlEl) {
+            checkBackend({ announce: true });
+          }
         });
         element.addEventListener("input", () => {
           if (element === temperatureEl) updateTemperatureLabel();
@@ -753,13 +885,24 @@
         }
       });
 
+      window.addEventListener("online", () => {
+        if (backendUrlEl.value.trim()) {
+          checkBackend({ announce: true });
+        }
+      });
+
+      window.addEventListener("offline", () => {
+        backendHealthy = false;
+        setStatus("Browser offline", "error", "The browser is offline. Restore connectivity to reach the backend.");
+      });
+
       restoreSettings();
       ensureSystemMessage();
       if (conversation[0] && conversation[0].role === "system") {
         createMessageElement("system", conversation[0].content);
       }
+      checkBackend({ announce: true });
       promptEl.focus();
-      setStatus("Ready to chat");
     </script>
   </body>
 </html>
