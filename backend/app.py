@@ -13,7 +13,7 @@ import threading
 
 
 DEFAULT_MODEL_PATH = Path("models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")
-MODEL_PATH = Path(os.environ.get("LLAMA_MODEL_PATH", DEFAULT_MODEL_PATH))
+_MODEL_ENV_VAR = "LLAMA_MODEL_PATH"
 
 
 class ChatMessage(BaseModel):
@@ -67,24 +67,45 @@ app.add_middleware(
 )
 
 _llama_instance: Optional[Llama] = None
+_current_model_path: Optional[Path] = None
 _model_lock = threading.Lock()
+
+
+def _resolve_model_path() -> Path:
+    """Return the model path requested by the current environment."""
+
+    env_value = os.environ.get(_MODEL_ENV_VAR)
+    if env_value:
+        return Path(env_value).expanduser()
+    return DEFAULT_MODEL_PATH
 
 
 def _load_model() -> Llama:
     """Create or return the cached Llama instance."""
 
-    global _llama_instance
+    global _llama_instance, _current_model_path
+    desired_path = _resolve_model_path()
+    if _llama_instance is not None and _current_model_path == desired_path:
+        return _llama_instance
+
+    if _llama_instance is not None and _current_model_path != desired_path:
+        # The configured path changed; drop the cached instance so the
+        # application can load the newly requested weights.
+        _llama_instance = None
+
     if _llama_instance is None:
-        if not MODEL_PATH.exists():
+        if not desired_path.exists():
             raise FileNotFoundError(
-                f"Could not find model file at {MODEL_PATH}. Please follow the setup instructions."
+                "Could not find model file at "
+                f"{desired_path}. Set {_MODEL_ENV_VAR} or download the default weights."
             )
         _llama_instance = Llama(
-            model_path=str(MODEL_PATH),
+            model_path=str(desired_path),
             n_ctx=4096,
             chat_format="chatml",
             n_threads=int(os.environ.get("LLAMA_CPP_THREADS", os.cpu_count() or 4)),
         )
+        _current_model_path = desired_path
     return _llama_instance
 
 

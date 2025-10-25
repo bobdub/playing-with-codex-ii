@@ -32,13 +32,19 @@ laptop or inside a Codespaces-style container:
    [`TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF`](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF)
    work well for experimentation.
 
+### Download a GGUF model
+
 Download a model into `models/` or point the `LLAMA_MODEL_PATH` environment
-variable at your preferred `.gguf` file before starting the backend.
+variable at your preferred `.gguf` file before starting the backend. The
+application validates the configured file path on startup.
 
 ```bash
 mkdir -p models
 wget -O models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
   https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/TinyLlama-1.1B-Chat-v1.0.Q4_K_M.gguf
+
+# Optional: point the backend at a different weight file.
+export LLAMA_MODEL_PATH=/absolute/path/to/another-model.gguf
 ```
 
 ## Backend setup
@@ -47,12 +53,12 @@ wget -O models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
 python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install fastapi uvicorn "llama-cpp-python==0.2.*"
+pip install -r backend/requirements.txt
 
-# Optional: override if your model lives elsewhere
-export LLAMA_MODEL_PATH=/absolute/path/to/model.gguf
+uvicorn backend.main:app --reload --port 8000
 
-uvicorn backend.app:app --reload --port 8000
+# Alternatively, rely on python -m uvicorn to resolve the entrypoint module.
+python -m uvicorn backend.main:app --reload --port 8000
 ```
 
 The service validates that the model file exists at startup and will raise a
