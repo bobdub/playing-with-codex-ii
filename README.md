@@ -1,42 +1,40 @@
 # playing-with-codex-ii
 
-Create a lightweight website that chats with a locally hosted large language
-model (LLM).
+Welcome to a playful little lab for chatting with a locally hosted large
+language model (LLM). The project stays intentionally small so you can spin it
+up in minutes, experiment freely, and remix it into your own creative console.
 
-## Live console
+## Jump straight into a conversation
 
-Visit the published GitHub Pages site at [`docs/index.html`](docs/index.html)
-to launch the in-browser TinyLlama console. The page loads the same static
-client that lives under `frontend/`, giving you quick access to the controls
-without needing to start a local web server. Point the "Backend URL" field at
-your running FastAPI instance (for local testing this is typically
-`http://localhost:8000`).
+Want to see the experience before wiring anything together? Open the GitHub
+Pages build at [`docs/index.html`](docs/index.html). It serves the same static
+client that lives in `frontend/`, so you can tinker with temperature, max
+tokens, and system prompts right from the browser. Point the **Backend URL**
+field at your running FastAPI instance (typically `http://localhost:8000`) and
+start chatting.
 
-## Repository layout
+## How the pieces fit together
 
-The project is deliberately small so it can run entirely on a developer's
-laptop or inside a Codespaces-style container:
-
-| Path | Purpose |
+| Path | What you'll find |
 | --- | --- |
-| `backend/app.py` | FastAPI service exposing a `/chat` endpoint backed by [`llama.cpp`](https://github.com/ggerganov/llama.cpp). |
-| `frontend/index.html` | Static HTML/JS client that renders the conversation and POSTs user input to the backend. |
-| `models/` | Expected location for downloaded `.gguf` model weights. |
+| `backend/app.py` | A FastAPI service that offers a `/chat` endpoint backed by [`llama.cpp`](https://github.com/ggerganov/llama.cpp). |
+| `frontend/index.html` | A zero-dependency HTML/JS client that streams conversations to and from the backend. |
+| `models/` | Drop your `.gguf` model weights here so the backend can discover them. |
 
-## Prerequisites
+## What you need before you start
 
-1. **Python 3.9+** with `pip`.
-2. **C compiler toolchain** (needed by `llama-cpp-python`). On Debian/Ubuntu run
+1. **Python 3.9+** with `pip` available.
+2. **A C compiler toolchain** for `llama-cpp-python`. On Debian/Ubuntu run
    `sudo apt-get update && sudo apt-get install build-essential`.
-3. **A GGUF model file.** Tiny models such as
+3. **A GGUF model file.** Compact options such as
    [`TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF`](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF)
-   work well for experimentation.
+   are perfect for quick experiments.
 
-### Download a GGUF model
+### Grab a model checkpoint
 
-Download a model into `models/` or point the `LLAMA_MODEL_PATH` environment
-variable at your preferred `.gguf` file before starting the backend. The
-application validates the configured file path on startup.
+Store a model in `models/` or point the `LLAMA_MODEL_PATH` environment variable
+at a different `.gguf` file before launching the backend. The app double-checks
+that the file exists when it boots.
 
 ```bash
 mkdir -p models
@@ -47,7 +45,7 @@ wget -O models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
 export LLAMA_MODEL_PATH=/absolute/path/to/another-model.gguf
 ```
 
-## Backend setup
+## Bring the backend to life
 
 ```bash
 python -m venv .venv
@@ -57,34 +55,30 @@ pip install -r backend/requirements.txt
 
 uvicorn backend.main:app --reload --port 8000
 
-# Alternatively, rely on python -m uvicorn to resolve the entrypoint module.
+# Or lean on python -m uvicorn to resolve the entrypoint module.
 python -m uvicorn backend.main:app --reload --port 8000
 ```
 
-The service validates that the model file exists at startup and will raise a
-clear error if it cannot be located. Adjust `LLAMA_CPP_THREADS` to tune CPU
-usage.
+The server confirms that your model path is valid on startup. Adjust
+`LLAMA_CPP_THREADS` whenever you need to balance speed and CPU headroom.
 
-## Frontend setup
+## Light up the frontend
 
-The refreshed frontend is a framework-free HTML experience that exposes
-controls for the backend URL, temperature, max tokens, and an optional system
-instruction. Serve it with any static file server:
+The frontend keeps things simple—just HTML, CSS, and a splash of JavaScript—so
+you can host it anywhere:
 
 ```bash
 cd frontend
 python -m http.server 3000
 ```
 
-Open <http://localhost:3000> and start chatting. Update the “Backend URL” field
-inside the UI if your API runs elsewhere and provide a system instruction to
-steer the assistant’s behaviour.
+Visit <http://localhost:3000>, plug in your backend URL, and (optionally) add a
+system instruction to steer the assistant’s vibe.
 
-## Customisation ideas
+## Remix ideas
 
-* Seed the conversation with a system message in `frontend/index.html` for a
-  custom persona.
-* Expose additional generation parameters such as `top_p` or `repeat_penalty`
-  by extending the `ChatRequest` model in `backend/app.py`.
-* Deploy behind HTTPS by placing the FastAPI app behind a proxy like Caddy or
-  nginx and adjusting CORS origins accordingly.
+* Seed the chat with a custom persona in `frontend/index.html`.
+* Add more generation controls—`top_p`, `repeat_penalty`, or your favourite
+  knobs—by extending the `ChatRequest` model in `backend/app.py`.
+* Put the FastAPI app behind HTTPS with a proxy such as Caddy or nginx and
+  tweak the CORS settings to match.

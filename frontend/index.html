@@ -7,32 +7,30 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;700&family=Space+Grotesk:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
     <style>
       :root {
-        --bg-primary: #1c134c;
-        --bg-secondary: #0b0425;
-        --bg-grid-color: rgba(16, 7, 40, 0.65);
-        --panel-bg: rgba(7, 6, 30, 0.92);
-        --panel-border-inner: #f9f17f;
-        --panel-border-mid: #f43cff;
-        --panel-border-outer: #08c5ff;
-        --panel-shadow: 0 0 0 2px var(--panel-border-inner),
-          0 0 0 5px var(--panel-border-mid),
-          0 0 0 8px var(--panel-border-outer);
-        --accent: #f4f13d;
-        --accent-strong: #ff5efb;
-        --danger: #ff6f61;
-        --text-primary: #fdfbd6;
-        --text-secondary: rgba(253, 251, 214, 0.75);
-        --font-body: "VT323", "Lucida Console", monospace;
-        --font-heading: "Press Start 2P", "Lucida Console", monospace;
-        --surface-stripe: rgba(8, 197, 255, 0.08);
+        --bg-primary: #fdf2ff;
+        --bg-secondary: #e4f3ff;
+        --bg-grid-color: rgba(255, 255, 255, 0.35);
+        --panel-bg: rgba(255, 255, 255, 0.78);
+        --panel-border-inner: #ffd6a5;
+        --panel-border-mid: #b8c0ff;
+        --panel-border-outer: #ffcad4;
+        --panel-shadow: 0 18px 40px rgba(61, 63, 99, 0.18);
+        --accent: #f66565;
+        --accent-strong: #fda769;
+        --danger: #d94862;
+        --text-primary: #2f1f4f;
+        --text-secondary: rgba(47, 31, 79, 0.7);
+        --font-body: "Space Grotesk", "Trebuchet MS", sans-serif;
+        --font-heading: "Poppins", "Trebuchet MS", sans-serif;
+        --surface-stripe: rgba(255, 202, 212, 0.28);
         font-family: var(--font-body);
         font-size: 18px;
-        line-height: 1.45;
+        line-height: 1.55;
       }
 
       * {
@@ -43,8 +41,8 @@
         margin: 0;
         min-height: 100vh;
         background:
-          radial-gradient(circle at 15% 10%, rgba(244, 94, 251, 0.25), transparent 45%),
-          radial-gradient(circle at 80% 20%, rgba(8, 197, 255, 0.3), transparent 50%),
+          radial-gradient(circle at 10% 15%, rgba(255, 202, 212, 0.6), transparent 55%),
+          radial-gradient(circle at 80% 0%, rgba(184, 192, 255, 0.55), transparent 52%),
           linear-gradient(135deg, var(--bg-primary), var(--bg-secondary));
         color: var(--text-primary);
         display: flex;
@@ -59,75 +57,97 @@
         position: fixed;
         inset: 0;
         background:
+          radial-gradient(circle at 15% 85%, rgba(253, 222, 236, 0.65), transparent 55%),
+          radial-gradient(circle at 75% 65%, rgba(210, 227, 255, 0.5), transparent 52%);
+        filter: blur(0px);
+        pointer-events: none;
+        opacity: 0.6;
+      }
+
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background:
           repeating-linear-gradient(
             0deg,
             transparent,
-            transparent 10px,
-            var(--bg-grid-color) 10px,
-            var(--bg-grid-color) 12px
-          ),
-          repeating-linear-gradient(
-            90deg,
-            transparent,
-            transparent 10px,
-            var(--bg-grid-color) 10px,
-            var(--bg-grid-color) 12px
+            transparent 32px,
+            rgba(255, 255, 255, 0.2) 32px,
+            rgba(255, 255, 255, 0.2) 34px
           );
         pointer-events: none;
-        image-rendering: pixelated;
-        opacity: 0.4;
+        mix-blend-mode: soft-light;
+        opacity: 0.35;
       }
 
       header {
-        padding: 2.75rem 1.5rem 1.5rem;
+        padding: 3.2rem 1.5rem 2.2rem;
         text-align: center;
         position: relative;
+        color: var(--text-primary);
+        z-index: 0;
+      }
+
+      header::after {
+        content: "";
+        position: absolute;
+        inset: 1.2rem 14%;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.55), rgba(255, 202, 212, 0.35));
+        border-radius: 32px;
+        filter: blur(0px);
+        opacity: 0.6;
+        z-index: -1;
       }
 
       header h1 {
-        margin: 0 0 0.75rem;
-        font-size: clamp(1.8rem, 2.2vw, 2.4rem);
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
+        margin: 0 0 1rem;
+        font-size: clamp(2.1rem, 4vw, 3rem);
+        letter-spacing: 0.08em;
+        text-transform: none;
         font-family: var(--font-heading);
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      header h1 span {
         color: var(--accent);
-        text-shadow: 4px 4px 0 rgba(10, 3, 33, 0.85);
       }
 
       header p {
         margin: 0 auto;
-        max-width: 680px;
+        max-width: 720px;
         color: var(--text-secondary);
         font-size: 1.05rem;
-        text-shadow: 2px 2px 0 rgba(10, 3, 33, 0.85);
       }
 
       main {
         flex: 1;
         width: min(1180px, 100%);
-        margin: 0 auto 2.75rem;
-        padding: 0 1.75rem;
+        margin: 0 auto 3.2rem;
+        padding: 0 2rem;
         display: grid;
-        gap: 1.75rem;
-        grid-template-columns: 2.5fr 1fr;
+        gap: 2rem;
+        grid-template-columns: 2.3fr 1fr;
       }
 
       .panel {
         background: var(--panel-bg);
-        border-radius: 12px;
-        border: 3px solid var(--panel-border-inner);
+        border-radius: 22px;
+        border: 1.5px solid rgba(255, 214, 165, 0.65);
         box-shadow: var(--panel-shadow);
         position: relative;
         overflow: hidden;
+        backdrop-filter: blur(12px);
       }
 
       .panel::before {
         content: "";
         position: absolute;
-        inset: 6px;
-        border: 2px solid rgba(8, 197, 255, 0.35);
+        inset: 0;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0));
         pointer-events: none;
-        mix-blend-mode: screen;
+        opacity: 0.65;
       }
 
       .chat-panel {
@@ -140,36 +160,33 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 1.15rem 1.65rem;
-        background: linear-gradient(90deg, rgba(8, 197, 255, 0.25), rgba(244, 60, 255, 0.25));
-        border-bottom: 3px solid var(--panel-border-inner);
-        box-shadow: inset 0 -3px 0 rgba(4, 9, 48, 0.8);
+        padding: 1.35rem 1.9rem;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.85), rgba(255, 214, 165, 0.55));
+        border-bottom: 1px solid rgba(255, 214, 165, 0.6);
       }
 
       .chat-toolbar h2 {
         margin: 0;
-        font-size: 0.95rem;
-        text-transform: uppercase;
-        letter-spacing: 0.12em;
+        font-size: 1.1rem;
+        letter-spacing: 0.04em;
         font-family: var(--font-heading);
         color: var(--text-primary);
-        text-shadow: 3px 3px 0 rgba(10, 3, 33, 0.9);
       }
 
       .status-chip {
         display: inline-flex;
         flex-direction: column;
         align-items: flex-start;
-        gap: 0.15rem;
-        padding: 0.45rem 0.9rem;
+        gap: 0.2rem;
+        padding: 0.5rem 1.1rem;
         border-radius: 999px;
-        font-size: 0.7rem;
-        letter-spacing: 0.08em;
-        background: rgba(8, 197, 255, 0.22);
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        background: rgba(255, 255, 255, 0.85);
         color: var(--accent);
-        border: 2px solid rgba(244, 60, 255, 0.4);
-        box-shadow: 2px 2px 0 rgba(4, 9, 48, 0.75);
-        min-width: 170px;
+        border: 1.5px solid rgba(255, 214, 165, 0.7);
+        box-shadow: 0 10px 18px rgba(59, 41, 96, 0.18);
+        min-width: 190px;
         cursor: default;
       }
 
@@ -180,15 +197,15 @@
       }
 
       .status-chip[data-state="error"] {
-        background: rgba(255, 111, 97, 0.2);
+        background: rgba(255, 234, 238, 0.95);
         color: var(--danger);
-        border-color: rgba(255, 111, 97, 0.6);
+        border-color: rgba(217, 72, 98, 0.45);
       }
 
       .status-chip[data-state="pending"] {
-        background: rgba(8, 197, 255, 0.18);
-        color: var(--accent);
-        border-color: rgba(8, 197, 255, 0.6);
+        background: rgba(255, 244, 230, 0.95);
+        color: var(--accent-strong);
+        border-color: rgba(253, 167, 105, 0.5);
       }
 
       .status-chip svg {
@@ -202,7 +219,7 @@
 
       .status-chip .status-hint {
         font-size: 0.6rem;
-        letter-spacing: 0.12em;
+        letter-spacing: 0.18em;
         opacity: 0.8;
         text-transform: uppercase;
       }
@@ -210,125 +227,124 @@
       #history {
         flex: 1;
         overflow-y: auto;
-        padding: 1.75rem;
+        padding: 1.9rem;
         display: grid;
-        gap: 1.25rem;
+        gap: 1.35rem;
         align-content: start;
         scrollbar-width: thin;
-        scrollbar-color: var(--accent) rgba(8, 7, 32, 0.7);
+        scrollbar-color: var(--accent) rgba(255, 255, 255, 0.7);
         background:
           repeating-linear-gradient(
             0deg,
-            transparent,
-            transparent 24px,
-            var(--surface-stripe) 24px,
-            var(--surface-stripe) 28px
+            rgba(255, 255, 255, 0.65),
+            rgba(255, 255, 255, 0.65) 28px,
+            rgba(255, 202, 212, 0.35) 28px,
+            rgba(255, 202, 212, 0.35) 32px
           );
+        border-radius: 18px 18px 0 0;
       }
 
       .message {
-        padding: 0.9rem 1.1rem;
-        border-radius: 6px;
+        padding: 1.05rem 1.2rem;
+        border-radius: 16px;
         position: relative;
-        border: 3px solid rgba(244, 60, 255, 0.35);
-        background:
-          linear-gradient(135deg, rgba(14, 9, 52, 0.9), rgba(31, 18, 83, 0.75));
-        box-shadow: 6px 6px 0 rgba(8, 7, 32, 0.85);
+        border: 1.5px solid rgba(184, 192, 255, 0.5);
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 14px 24px rgba(47, 31, 79, 0.12);
       }
 
       .message strong {
         display: block;
-        font-size: 0.75rem;
-        letter-spacing: 0.16em;
+        font-size: 0.78rem;
+        letter-spacing: 0.2em;
         text-transform: uppercase;
         color: var(--accent);
-        margin-bottom: 0.45rem;
+        margin-bottom: 0.35rem;
         font-family: var(--font-heading);
       }
 
       .message p {
         margin: 0;
         white-space: pre-wrap;
-        line-height: 1.35;
+        line-height: 1.6;
       }
 
       .message[data-role="user"] {
-        border-color: rgba(8, 197, 255, 0.6);
-        background: linear-gradient(135deg, rgba(6, 32, 72, 0.85), rgba(12, 52, 108, 0.7));
+        border-color: rgba(184, 192, 255, 0.7);
+        background: rgba(235, 239, 255, 0.92);
       }
 
       .message[data-role="assistant"] {
-        border-color: rgba(244, 60, 255, 0.55);
-        background: linear-gradient(135deg, rgba(47, 7, 66, 0.85), rgba(75, 14, 112, 0.7));
+        border-color: rgba(255, 202, 212, 0.75);
+        background: rgba(255, 244, 248, 0.92);
       }
 
       .message[data-role="system"] {
         font-style: italic;
-        border-color: rgba(249, 241, 127, 0.65);
-        background: linear-gradient(135deg, rgba(64, 51, 12, 0.8), rgba(89, 70, 16, 0.65));
-        color: #f9f3b8;
+        border-color: rgba(255, 214, 165, 0.8);
+        background: rgba(255, 249, 236, 0.96);
+        color: var(--text-primary);
       }
 
       .message[data-role="error"] {
-        border-color: rgba(255, 111, 97, 0.7);
-        background: linear-gradient(135deg, rgba(78, 8, 12, 0.85), rgba(128, 24, 28, 0.7));
+        border-color: rgba(217, 72, 98, 0.6);
+        background: rgba(255, 234, 238, 0.95);
       }
 
       .message[data-pending="true"]::after {
         content: "Generating…";
         position: absolute;
-        top: 0.8rem;
-        right: 1rem;
-        font-size: 0.65rem;
+        top: 0.9rem;
+        right: 1.2rem;
+        font-size: 0.63rem;
         text-transform: uppercase;
-        letter-spacing: 0.18em;
-        color: var(--text-secondary);
+        letter-spacing: 0.22em;
+        color: var(--accent-strong);
       }
 
       .chat-input {
-        border-top: 3px solid var(--panel-border-inner);
-        padding: 1.25rem 1.65rem 1.65rem;
+        border-top: 1px solid rgba(255, 214, 165, 0.65);
+        padding: 1.5rem 1.9rem 1.9rem;
         display: grid;
-        gap: 0.85rem;
-        background:
-          linear-gradient(0deg, rgba(8, 7, 32, 0.85), rgba(4, 5, 22, 0.95));
+        gap: 1.1rem;
+        background: rgba(255, 255, 255, 0.88);
       }
 
       .chat-input textarea {
         width: 100%;
         min-height: 120px;
         resize: vertical;
-        padding: 0.9rem 1rem;
-        border-radius: 6px;
-        border: 3px solid rgba(8, 197, 255, 0.55);
+        padding: 1rem 1.1rem;
+        border-radius: 14px;
+        border: 1.5px solid rgba(184, 192, 255, 0.7);
         background:
           repeating-linear-gradient(
             0deg,
-            rgba(6, 14, 45, 0.92),
-            rgba(6, 14, 45, 0.92) 18px,
-            rgba(8, 197, 255, 0.12) 18px,
-            rgba(8, 197, 255, 0.12) 20px
+            rgba(255, 255, 255, 0.92),
+            rgba(255, 255, 255, 0.92) 22px,
+            rgba(184, 192, 255, 0.2) 22px,
+            rgba(184, 192, 255, 0.2) 24px
           );
         color: inherit;
         font: inherit;
-        letter-spacing: 0.03em;
+        letter-spacing: 0.01em;
       }
 
       .chat-input textarea:focus {
-        outline: 3px solid rgba(244, 60, 255, 0.65);
+        outline: 3px solid rgba(253, 167, 105, 0.6);
         outline-offset: 4px;
       }
 
       .chat-actions {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.75rem;
+        gap: 1rem;
         align-items: center;
         justify-content: space-between;
       }
 
       .chat-actions .hint {
-        font-size: 0.75rem;
+        font-size: 0.8rem;
         color: var(--text-secondary);
         letter-spacing: 0.08em;
         text-transform: uppercase;
@@ -336,93 +352,88 @@
 
       .button {
         appearance: none;
-        border: 3px solid var(--panel-border-inner);
-        border-radius: 6px;
-        padding: 0.65rem 1.8rem;
-        font-size: 0.85rem;
+        border: none;
+        border-radius: 999px;
+        padding: 0.85rem 2.4rem;
+        font-size: 0.95rem;
         font-family: var(--font-heading);
-        letter-spacing: 0.1em;
+        letter-spacing: 0.04em;
         cursor: pointer;
-        background: rgba(14, 9, 52, 0.9);
-        color: var(--text-primary);
-        box-shadow: 4px 4px 0 rgba(8, 7, 32, 0.85);
-        transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
-        text-transform: uppercase;
+        background: linear-gradient(135deg, rgba(246, 101, 101, 0.9), rgba(253, 167, 105, 0.9));
+        color: #fff;
+        box-shadow: 0 16px 24px rgba(246, 101, 101, 0.28);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        text-transform: none;
       }
 
       .button.primary {
-        border-color: rgba(8, 197, 255, 0.75);
-        background: linear-gradient(135deg, rgba(8, 197, 255, 0.9), rgba(244, 241, 61, 0.95));
-        color: #130833;
+        background: linear-gradient(135deg, rgba(246, 101, 101, 0.95), rgba(253, 167, 105, 0.95));
       }
 
       .button.secondary {
-        border-color: rgba(244, 60, 255, 0.6);
-        background: linear-gradient(135deg, rgba(47, 7, 66, 0.9), rgba(24, 5, 48, 0.9));
+        background: linear-gradient(135deg, rgba(184, 192, 255, 0.95), rgba(138, 180, 248, 0.95));
         color: var(--text-primary);
+        box-shadow: 0 16px 24px rgba(138, 180, 248, 0.25);
       }
 
       .button:not(:disabled):hover {
-        transform: translate(-2px, -2px);
-        box-shadow: 6px 6px 0 rgba(8, 7, 32, 0.9);
-        filter: brightness(1.05);
+        transform: translateY(-2px);
+        box-shadow: 0 20px 28px rgba(246, 101, 101, 0.3);
+      }
+
+      .button.secondary:not(:disabled):hover {
+        box-shadow: 0 20px 28px rgba(138, 180, 248, 0.3);
       }
 
       .button:disabled {
         opacity: 0.6;
         cursor: progress;
-        box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+        box-shadow: none;
       }
 
       .sidebar {
         display: grid;
-        gap: 1.5rem;
+        gap: 1.6rem;
         align-content: start;
       }
 
       .sidebar section {
-        padding: 1.35rem 1.6rem;
-        background:
-          linear-gradient(90deg, rgba(8, 197, 255, 0.12) 0%, rgba(8, 7, 32, 0.75) 8%, rgba(8, 7, 32, 0.75) 92%, rgba(244, 60, 255, 0.12) 100%);
-        border: 3px solid rgba(249, 241, 127, 0.45);
-        box-shadow: inset 0 0 0 2px rgba(8, 197, 255, 0.35), 6px 6px 0 rgba(8, 7, 32, 0.85);
+        padding: 1.6rem 1.8rem;
+        background: rgba(255, 255, 255, 0.88);
+        border: 1.5px solid rgba(184, 192, 255, 0.4);
+        box-shadow: 0 12px 24px rgba(47, 31, 79, 0.12);
+        border-radius: 20px;
       }
 
       .sidebar h3 {
-        margin: 0 0 0.85rem;
-        font-size: 0.9rem;
-        text-transform: uppercase;
-        letter-spacing: 0.16em;
+        margin: 0 0 1rem;
+        font-size: 1rem;
+        letter-spacing: 0.08em;
         font-family: var(--font-heading);
         color: var(--accent);
-        text-shadow: 3px 3px 0 rgba(10, 3, 33, 0.85);
+        text-transform: uppercase;
       }
 
       .sidebar label {
         display: grid;
-        gap: 0.35rem;
-        margin-bottom: 1rem;
-        font-size: 0.9rem;
-        letter-spacing: 0.08em;
+        gap: 0.45rem;
+        margin-bottom: 1.1rem;
+        font-size: 0.85rem;
+        letter-spacing: 0.1em;
         text-transform: uppercase;
+        color: var(--text-secondary);
       }
 
       .sidebar input[type="url"],
       .sidebar input[type="number"],
       .sidebar textarea {
-        padding: 0.6rem 0.75rem;
-        border-radius: 6px;
-        border: 3px solid rgba(244, 60, 255, 0.45);
-        background:
-          repeating-linear-gradient(
-            0deg,
-            rgba(5, 10, 34, 0.95),
-            rgba(5, 10, 34, 0.95) 16px,
-            rgba(244, 60, 255, 0.12) 16px,
-            rgba(244, 60, 255, 0.12) 18px
-          );
+        padding: 0.75rem 0.9rem;
+        border-radius: 14px;
+        border: 1.5px solid rgba(184, 192, 255, 0.6);
+        background: rgba(255, 255, 255, 0.95);
         color: inherit;
         font: inherit;
+        box-shadow: inset 0 1px 3px rgba(47, 31, 79, 0.05);
       }
 
       .sidebar textarea {
@@ -433,7 +444,7 @@
       .sidebar input[type="url"]:focus,
       .sidebar input[type="number"]:focus,
       .sidebar textarea:focus {
-        outline: 3px solid rgba(8, 197, 255, 0.65);
+        outline: 3px solid rgba(253, 167, 105, 0.45);
         outline-offset: 4px;
       }
 
@@ -445,16 +456,16 @@
       .temperature-value {
         font-variant-numeric: tabular-nums;
         font-size: 0.9rem;
-        color: var(--text-primary);
-        text-shadow: 2px 2px 0 rgba(10, 3, 33, 0.8);
+        color: var(--accent);
+        font-weight: 600;
       }
 
       footer {
-        padding: 1.75rem 1rem 2.25rem;
+        padding: 2.2rem 1rem 2.6rem;
         text-align: center;
         color: var(--text-secondary);
         font-size: 0.85rem;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
       }
 
@@ -486,10 +497,11 @@
   </head>
   <body>
     <header>
-      <h1>TinyLlama Local Chat Console</h1>
+      <h1><span>TinyLlama</span> Local Chat Console</h1>
       <p>
-        Operate a locally hosted TinyLlama instance without cloud dependencies. Adjust the system instructions, generation
-        settings, and target backend URL, then hold a conversation that never leaves your machine.
+        Bring your personal TinyLlama online with a console that feels like a friendly lounge instead of a terminal. Set your
+        own instructions, guide the model’s creativity, and connect to any local endpoint while keeping every word on your
+        machine.
       </p>
     </header>
     <main>
