@@ -392,48 +392,56 @@
     </template>
 
     <script>
-      const defaultPersona = `You are a thoughtful guide rooted in the values of privacy,
-open tooling, and gentle curiosity. Answer with clarity, warmth, and grounded imagination.`;
-      const personaInput = document.querySelector('#persona-input');
-      const savePersonaButton = document.querySelector('#save-persona');
-      const resetPersonaButton = document.querySelector('#reset-persona');
-      const messagesList = document.querySelector('#messages');
-      const chatForm = document.querySelector('#chat-form');
-      const chatInput = document.querySelector('#chat-input');
-      const sendButton = document.querySelector('#send-button');
-      const messageTemplate = document.querySelector('#message-template');
-      const typingTemplate = document.querySelector('#typing-template');
+      (function () {
+        const defaultPersona =
+          'You are a thoughtful guide rooted in the values of privacy, open tooling, and gentle curiosity. Answer with clarity, warmth, and grounded imagination.';
+        const personaInput = document.querySelector('#persona-input');
+        const savePersonaButton = document.querySelector('#save-persona');
+        const resetPersonaButton = document.querySelector('#reset-persona');
+        const messagesList = document.querySelector('#messages');
+        const chatForm = document.querySelector('#chat-form');
+        const chatInput = document.querySelector('#chat-input');
+        const sendButton = document.querySelector('#send-button');
+        const messageTemplate = document.querySelector('#message-template');
+        const typingTemplate = document.querySelector('#typing-template');
 
-      const storageKey = 'codex-ii::persona';
-
-      const state = {
-        persona: loadPersona(),
-        history: []
-      };
-
-      personaInput.value = state.persona;
-      appendMessage('system', 'System', 'Ready when you are. Your words stay on this machine.');
-
-      chatForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const prompt = chatInput.value.trim();
-        if (!prompt) {
+        if (!messagesList || !chatForm || !chatInput || !sendButton) {
+          console.error('Chat UI failed to initialize: required elements are missing.');
           return;
         }
 
-        chatInput.value = '';
-        chatInput.style.height = 'auto';
+        const storageKey = 'codex-ii::persona';
 
-        appendMessage('user', 'You', prompt);
-        state.history.push({ role: 'user', content: prompt });
+        const state = {
+          persona: loadPersona(),
+          history: []
+        };
 
-        sendButton.disabled = true;
-        const typingNode = typingTemplate.content.firstElementChild.cloneNode(true);
-        messagesList.appendChild(typingNode);
-        scrollToBottom();
+        if (personaInput) {
+          personaInput.value = state.persona;
+        }
 
-        try {
-          const response = await fetch('/api/chat', {
+        appendMessage('system', 'System', 'Ready when you are. Your words stay on this machine.');
+
+        chatForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          const prompt = chatInput.value.trim();
+          if (!prompt) {
+            return;
+          }
+
+          chatInput.value = '';
+          chatInput.style.height = 'auto';
+
+          appendMessage('user', 'You', prompt);
+          state.history.push({ role: 'user', content: prompt });
+
+          sendButton.disabled = true;
+          const typingNode = createTypingNode();
+          messagesList.appendChild(typingNode);
+          scrollToBottom();
+
+          fetch('/api/chat', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -443,85 +451,156 @@ open tooling, and gentle curiosity. Answer with clarity, warmth, and grounded im
               history: state.history,
               persona: state.persona
             })
+          })
+            .then(function (response) {
+              if (!response.ok) {
+                throw new Error('Server responded with ' + response.status);
+              }
+              return response.json();
+            })
+            .then(function (data) {
+              const text = data && typeof data.reply === 'string' ? data.reply : '(No response payload received)';
+              appendBotMessage(text);
+            }, function (error) {
+              const fallback =
+                'Your bot endpoint is sleeping. Wake a local model and listen on /api/chat to chat for real.\n\n' +
+                'Debug: ' + error.message;
+              appendBotMessage(fallback);
+            })
+            .then(function () {
+              if (typingNode && typingNode.parentNode) {
+                typingNode.parentNode.removeChild(typingNode);
+              }
+              sendButton.disabled = false;
+              scrollToBottom();
+            });
+        });
+
+        chatInput.addEventListener('input', function () {
+          chatInput.style.height = 'auto';
+          chatInput.style.height = Math.min(chatInput.scrollHeight, 220) + 'px';
+        });
+
+        if (savePersonaButton) {
+          savePersonaButton.addEventListener('click', function () {
+            const value = personaInput ? personaInput.value.trim() : '';
+            state.persona = value ? value : defaultPersona;
+            if (personaInput) {
+              personaInput.value = state.persona;
+            }
+            persistPersona();
+            appendMessage('system', 'System', 'Persona updated. Future replies will follow your new guidance.');
+            scrollToBottom();
           });
+        }
 
-          if (!response.ok) {
-            throw new Error(`Server responded with ${response.status}`);
-          }
+        if (resetPersonaButton) {
+          resetPersonaButton.addEventListener('click', function () {
+            state.persona = defaultPersona;
+            if (personaInput) {
+              personaInput.value = defaultPersona;
+            }
+            persistPersona();
+            appendMessage('system', 'System', 'Persona reset to default.');
+            scrollToBottom();
+          });
+        }
 
-          const data = await response.json();
-          const text = data?.reply ?? '(No response payload received)';
-          appendBotMessage(text);
-        } catch (error) {
-          const fallback =
-            'Your bot endpoint is sleeping. Wake a local model and listen on /api/chat to chat for real.\n\n' +
-            `Debug: ${error.message}`;
-          appendBotMessage(fallback);
-        } finally {
-          if (typingNode.isConnected) {
-            typingNode.remove();
+        function appendBotMessage(text) {
+          const safeText = typeof text === 'string' ? text : String(text);
+          state.history.push({ role: 'assistant', content: safeText });
+          appendMessage('bot', 'Bot', safeText);
+        }
+
+        function appendMessage(type, label, content) {
+          const node = cloneMessageNode();
+          if (type) {
+            node.classList.add(type);
           }
-          sendButton.disabled = false;
+          const roleElement = ensureChild(node, '.message__role', 'span', 'message__role');
+          const bodyElement = ensureChild(node, '.message__body', 'p', 'message__body');
+          roleElement.textContent = label;
+          bodyElement.textContent = typeof content === 'string' ? content : String(content);
+          messagesList.appendChild(node);
           scrollToBottom();
+          return node;
         }
-      });
 
-      chatInput.addEventListener('input', () => {
-        chatInput.style.height = 'auto';
-        chatInput.style.height = Math.min(chatInput.scrollHeight, 220) + 'px';
-      });
-
-      savePersonaButton.addEventListener('click', () => {
-        state.persona = personaInput.value.trim() || defaultPersona;
-        persistPersona();
-        appendMessage('system', 'System', 'Persona updated. Future replies will follow your new guidance.');
-        scrollToBottom();
-      });
-
-      resetPersonaButton.addEventListener('click', () => {
-        state.persona = defaultPersona;
-        personaInput.value = defaultPersona;
-        persistPersona();
-        appendMessage('system', 'System', 'Persona reset to default.');
-        scrollToBottom();
-      });
-
-      function appendBotMessage(text) {
-        state.history.push({ role: 'assistant', content: text });
-        appendMessage('bot', 'Bot', text);
-      }
-
-      function appendMessage(type, label, content) {
-        const node = messageTemplate.content.firstElementChild.cloneNode(true);
-        node.classList.add(type);
-        node.querySelector('.message__role').textContent = label;
-        node.querySelector('.message__body').textContent = content;
-        messagesList.appendChild(node);
-        scrollToBottom();
-        return node;
-      }
-
-      function scrollToBottom() {
-        messagesList.scrollTo({ top: messagesList.scrollHeight, behavior: 'smooth' });
-      }
-
-      function loadPersona() {
-        try {
-          const stored = window.localStorage.getItem(storageKey);
-          return stored ? stored : defaultPersona;
-        } catch (error) {
-          console.warn('Unable to read persona from storage', error);
-          return defaultPersona;
+        function cloneMessageNode() {
+          if (messageTemplate && messageTemplate.content && messageTemplate.content.firstElementChild) {
+            return messageTemplate.content.firstElementChild.cloneNode(true);
+          }
+          const article = document.createElement('article');
+          article.className = 'message';
+          const roleSpan = document.createElement('span');
+          roleSpan.className = 'message__role';
+          const bodyParagraph = document.createElement('p');
+          bodyParagraph.className = 'message__body';
+          article.appendChild(roleSpan);
+          article.appendChild(bodyParagraph);
+          return article;
         }
-      }
 
-      function persistPersona() {
-        try {
-          window.localStorage.setItem(storageKey, state.persona);
-        } catch (error) {
-          console.warn('Unable to store persona', error);
+        function createTypingNode() {
+          if (typingTemplate && typingTemplate.content && typingTemplate.content.firstElementChild) {
+            return typingTemplate.content.firstElementChild.cloneNode(true);
+          }
+          const article = document.createElement('article');
+          article.className = 'message bot';
+          const roleSpan = document.createElement('span');
+          roleSpan.className = 'message__role';
+          roleSpan.textContent = 'Bot';
+          const spinner = document.createElement('span');
+          spinner.className = 'spinner';
+          spinner.setAttribute('role', 'status');
+          spinner.setAttribute('aria-label', 'Bot is thinking');
+          article.appendChild(roleSpan);
+          article.appendChild(spinner);
+          return article;
         }
-      }
+
+        function ensureChild(parent, selector, tagName, className) {
+          const existing = parent.querySelector(selector);
+          if (existing) {
+            return existing;
+          }
+          const element = document.createElement(tagName);
+          element.className = className;
+          parent.appendChild(element);
+          return element;
+        }
+
+        function scrollToBottom() {
+          const options = { top: messagesList.scrollHeight, behavior: 'smooth' };
+          if (typeof messagesList.scrollTo === 'function') {
+            try {
+              messagesList.scrollTo(options);
+              return;
+            } catch (error) {
+              // Older browsers may throw if smooth scrolling is unsupported.
+            }
+          }
+          messagesList.scrollTop = messagesList.scrollHeight;
+        }
+
+        function loadPersona() {
+          try {
+            const stored = window.localStorage.getItem(storageKey);
+            return stored ? stored : defaultPersona;
+          } catch (error) {
+            console.warn('Unable to read persona from storage', error);
+            return defaultPersona;
+          }
+        }
+
+        function persistPersona() {
+          try {
+            window.localStorage.setItem(storageKey, state.persona);
+          } catch (error) {
+            console.warn('Unable to store persona', error);
+          }
+        }
+      })();
     </script>
   </body>
 </html>
