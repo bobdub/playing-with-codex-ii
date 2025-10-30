@@ -1,5 +1,0 @@
-fastapi>=0.110,<1.0
-uvicorn>=0.23,<1.0
-llama-cpp-python>=0.2
-pytest>=7.0
-httpx>=0.25
