@@ -18,9 +18,9 @@ can iterate on tone and instructions without relying on remote services.
 
 ## Quick start
 
-1. Serve this repository as static files (for example `python -m http.server 8000`).
-2. Run a local process that accepts `POST /api/chat` requests and replies with JSON.
-3. Visit `http://localhost:8000` (adjust the port if needed) and start chatting.
+1. Run the bundled development server: `python server.py` (use `--port` to change the port).
+2. Visit `http://localhost:8000` (or the host/port you selected) and start chatting.
+3. When you're ready, swap the demo backend for your model process by handling `POST /api/chat`.
 
 The frontend expects JSON shaped like the following:
 
@@ -49,7 +49,8 @@ The chat form sends a request with this payload:
 
 Implementations can use `history` and `persona` to maintain context when calling an LLM.
 Always return within a reasonable time; the UI disables the **Send** button while waiting
-but does not apply client-side timeouts.
+but does not apply client-side timeouts. The included `server.py` script simply echoes
+the user's latest message so you can validate the UI before wiring up a real model.
 
 ## Persona controls
 
