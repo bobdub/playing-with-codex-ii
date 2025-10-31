@@ -737,14 +737,30 @@
             })
             .then(function (data) {
               let text = '(No response payload received)';
-              if (state.adapter === 'ollama') {
-                if (data && data.message && typeof data.message.content === 'string') {
-                  text = data.message.content;
+              let messageContent = null;
+
+              if (data && data.message) {
+                if (typeof data.message.content === 'string') {
+                  messageContent = data.message.content;
+                } else if (Array.isArray(data.message.content)) {
+                  messageContent = data.message.content
+                    .map(function (chunk) {
+                      return typeof chunk === 'string' ? chunk : chunk && chunk.text ? chunk.text : '';
+                    })
+                    .join('')
+                    .trim();
+                  if (!messageContent) {
+                    messageContent = null;
+                  }
                 }
-              } else if (data && typeof data.reply === 'string') {
-                text = data.reply;
-              } else if (data && data.message && typeof data.message.content === 'string') {
-                text = data.message.content;
+              }
+
+              const reply = data && typeof data.reply === 'string' ? data.reply : null;
+
+              if (state.adapter === 'ollama') {
+                text = messageContent || reply || text;
+              } else {
+                text = reply || messageContent || text;
               }
               appendBotMessage(text);
             })
