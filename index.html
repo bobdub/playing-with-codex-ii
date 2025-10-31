@@ -261,10 +261,32 @@
         line-height: 1.5;
       }
 
+      .persona-panel input[type="url"],
+      .persona-panel input[type="text"] {
+        width: 100%;
+        border-radius: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        padding: 0.75rem 1rem;
+        font: inherit;
+        background: rgba(255, 255, 255, 0.9);
+      }
+
       .persona-panel .actions {
         display: flex;
         flex-wrap: wrap;
         gap: 0.75rem;
+      }
+
+      .persona-panel .endpoint-group {
+        display: grid;
+        gap: 0.75rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid rgba(148, 163, 184, 0.3);
+      }
+
+      .persona-panel .endpoint-group h3 {
+        margin: 0;
+        font-size: 1.05rem;
       }
 
       .persona-panel button.secondary {
@@ -369,6 +391,28 @@
             <code>{ message, history, persona }</code>. The UI will display the reply immediately when received and fall back to an
             offline note if the endpoint is unreachable.
           </div>
+          <div class="endpoint-group" aria-live="polite">
+            <h3>Chat endpoint</h3>
+            <p class="description">
+              Point the UI at the backend you have running locally or remotely. Relative paths use the same host as this page.
+            </p>
+            <label for="endpoint-input" class="sr-only">Chat endpoint URL</label>
+            <input
+              id="endpoint-input"
+              type="url"
+              inputmode="url"
+              placeholder="https://localhost:8000/api/chat"
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <div class="actions">
+              <button id="save-endpoint" class="primary" type="button">Save endpoint</button>
+              <button id="reset-endpoint" class="secondary" type="button">Use default (/api/chat)</button>
+            </div>
+            <div class="hint">
+              Requests are sent to this address. If the model listens elsewhere, enter the full URL (including protocol and port).
+            </div>
+          </div>
         </aside>
       </main>
       <footer>
@@ -402,9 +446,14 @@
         const legacyStorageKey = 'codex-ii::persona';
         const legacyDefaultPersona =
           'You are a thoughtful guide rooted in the values of privacy, open tooling, and gentle curiosity. Answer with clarity, warmth, and grounded imagination.';
+        const endpointStorageKey = 'codex-ii::chat-endpoint';
+        const defaultEndpoint = '/api/chat';
         const personaInput = document.querySelector('#persona-input');
         const savePersonaButton = document.querySelector('#save-persona');
         const resetPersonaButton = document.querySelector('#reset-persona');
+        const endpointInput = document.querySelector('#endpoint-input');
+        const saveEndpointButton = document.querySelector('#save-endpoint');
+        const resetEndpointButton = document.querySelector('#reset-endpoint');
         const messagesList = document.querySelector('#messages');
         const chatForm = document.querySelector('#chat-form');
         const chatInput = document.querySelector('#chat-input');
@@ -420,13 +469,18 @@
         const state = {
           userPersona: loadUserPersona(),
           persona: '',
-          history: []
+          history: [],
+          endpoint: loadEndpoint()
         };
 
         state.persona = buildPersona(state.userPersona);
 
         if (personaInput) {
           personaInput.value = state.userPersona;
+        }
+
+        if (endpointInput) {
+          endpointInput.value = state.endpoint;
         }
 
         appendMessage('system', 'System', 'Ready when you are. Your words stay on this machine.');
@@ -449,7 +503,9 @@
           messagesList.appendChild(typingNode);
           scrollToBottom();
 
-          fetch('/api/chat', {
+          const endpoint = state.endpoint || defaultEndpoint;
+
+          fetch(endpoint, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -472,8 +528,10 @@
             })
             .catch(function (error) {
               const fallback =
-                'Your bot endpoint is sleeping. Wake a local model and listen on /api/chat to chat for real.\n\n' +
-                'Debug: ' + error.message;
+                'Your bot endpoint is sleeping. Wake a local model and listen on ' +
+                endpoint +
+                ' to chat for real.\n\nDebug: ' +
+                error.message;
               appendBotMessage(fallback, { record: false });
             })
             .finally(function () {
@@ -513,6 +571,35 @@
             }
             persistUserPersona();
             appendMessage('system', 'System', 'Persona additions cleared. Main network personality is active.');
+            scrollToBottom();
+          });
+        }
+
+        if (saveEndpointButton) {
+          saveEndpointButton.addEventListener('click', function () {
+            const rawValue = endpointInput ? endpointInput.value : '';
+            state.endpoint = normalizeEndpoint(rawValue);
+            if (endpointInput) {
+              endpointInput.value = state.endpoint;
+            }
+            persistEndpoint();
+            appendMessage(
+              'system',
+              'System',
+              'Endpoint updated. Future requests will use ' + state.endpoint + '.'
+            );
+            scrollToBottom();
+          });
+        }
+
+        if (resetEndpointButton) {
+          resetEndpointButton.addEventListener('click', function () {
+            state.endpoint = defaultEndpoint;
+            if (endpointInput) {
+              endpointInput.value = state.endpoint;
+            }
+            persistEndpoint();
+            appendMessage('system', 'System', 'Endpoint reset. Requests are routed to ' + defaultEndpoint + '.');
             scrollToBottom();
           });
         }
@@ -637,6 +724,41 @@
           } catch (error) {
             console.warn('Unable to store persona additions', error);
           }
+        }
+
+        function loadEndpoint() {
+          try {
+            const stored = window.localStorage.getItem(endpointStorageKey);
+            if (stored) {
+              return normalizeEndpoint(stored);
+            }
+          } catch (error) {
+            console.warn('Unable to read chat endpoint from storage', error);
+          }
+          return defaultEndpoint;
+        }
+
+        function persistEndpoint() {
+          try {
+            if (!state.endpoint || state.endpoint === defaultEndpoint) {
+              window.localStorage.removeItem(endpointStorageKey);
+            } else {
+              window.localStorage.setItem(endpointStorageKey, state.endpoint);
+            }
+          } catch (error) {
+            console.warn('Unable to store chat endpoint', error);
+          }
+        }
+
+        function normalizeEndpoint(value) {
+          const trimmed = value ? value.trim() : '';
+          if (!trimmed) {
+            return defaultEndpoint;
+          }
+          if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith('/')) {
+            return trimmed;
+          }
+          return 'http://' + trimmed;
         }
       })();
     </script>

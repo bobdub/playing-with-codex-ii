@@ -28,6 +28,8 @@ The script queries each interactive element once and caches it:
 - `#chat-form` and `#chat-input` – the message composer.
 - `#send-button` – disabled while awaiting a response to prevent duplicate requests.
 - `#persona-input`, `#save-persona`, `#reset-persona` – controls for system prompt edits.
+- `#endpoint-input`, `#save-endpoint`, `#reset-endpoint` – let caretakers point the UI at a
+  different `/api/chat` URL without editing code.
 
 `state.history` tracks user/bot turns so the backend can build longer conversations.
 
@@ -87,7 +89,7 @@ When the endpoint fails, the UI displays a friendly message encouraging the care
 
 ## 4. Persona lifecycle
 
-Persona text persists in `localStorage` under the key `codex-ii::persona`.
+Persona text persists in `localStorage` under the key `codex-ii::persona-user`.
 
 1. On load, `loadPersona()` reads from storage, falling back to the default string if
    storage is unavailable or empty.
@@ -100,12 +102,27 @@ projects while remaining entirely client-side.
 
 ---
 
-## 5. Message flow breakdown
+## 5. Endpoint targeting
+
+Caretakers can adjust the chat backend without rebuilding the page:
+
+1. `loadEndpoint()` reads the stored value (`codex-ii::chat-endpoint`) and falls back to
+   the default `/api/chat` path when unset.
+2. Saving normalises the input (adding `http://` when a scheme is missing) so entries like
+   `localhost:9000/api/chat` work without fuss.
+3. Resetting removes the stored value and returns to the same-origin `/api/chat`.
+
+The resolved URL is used for every `fetch` call, and the transcript records system
+messages whenever the target changes so caretakers have an audit trail.
+
+---
+
+## 6. Message flow breakdown
 
 1. User submits the form – empty or whitespace-only prompts are ignored.
 2. UI pushes the user turn into `state.history` and renders it immediately.
 3. A typing indicator element is inserted using the `#typing-template` blueprint.
-4. `fetch('/api/chat', …)` sends the payload to the backend.
+4. `fetch(state.endpoint, …)` sends the payload to the selected backend URL.
 5. On success, the reply is appended via `appendBotMessage()` and captured in history.
 6. On failure, a fallback message is appended instead of leaving the transcript blank.
 7. The typing indicator is removed, and the send button is re-enabled.
@@ -115,7 +132,7 @@ and falls back gracefully if unsupported.
 
 ---
 
-## 6. Styling notes
+## 7. Styling notes
 
 - The gradient background and `backdrop-filter` effects create a soft glassmorphism aesthetic.
 - Components rely on CSS variables declared on `:root` for colour theming.
@@ -126,7 +143,7 @@ Customising the palette involves adjusting the CSS variables at the top of the f
 
 ---
 
-## 7. Accessibility considerations
+## 8. Accessibility considerations
 
 - Screen reader-only labels (`.sr-only`) accompany key inputs.
 - `aria-live="polite"` on the messages container ensures announcements without interrupting
@@ -138,15 +155,15 @@ When extending the UI, follow these patterns so the interface stays inclusive.
 
 ---
 
-## 8. Persistence and error resilience
+## 9. Persistence and error resilience
 
-`loadPersona()` and `persistPersona()` catch `localStorage` exceptions to avoid crashes in
-private browsing sessions. Network errors are surfaced in-line with diagnostic text, making
-backend debugging quicker during development.
+`loadPersona()`, `persistPersona()`, `loadEndpoint()`, and `persistEndpoint()` catch
+`localStorage` exceptions to avoid crashes in private browsing sessions. Network errors are
+surfaced in-line with diagnostic text, making backend debugging quicker during development.
 
 ---
 
-## 9. Deployment checklists
+## 10. Deployment checklists
 
 - [ ] Serve the static files with correct MIME types (HTML, CSS-inlined, JS).
 - [ ] Configure HTTPS if exposing beyond localhost; browsers block some APIs on insecure
@@ -158,7 +175,7 @@ backend debugging quicker during development.
 
 ---
 
-## 10. Extending the experience
+## 11. Extending the experience
 
 Ideas for future caretakers:
 
@@ -175,7 +192,7 @@ Document new behaviours in this guide to keep institutional knowledge alive.
 
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
@@ -186,7 +203,7 @@ Document new behaviours in this guide to keep institutional knowledge alive.
 
 ---
 
-## 12. Related documents
+## 13. Related documents
 
 - [`README.md`](../README.md) – Quick start summary for new contributors.
 - [`docs/Goals.md`](Goals.md) – High-level objectives for the project.
