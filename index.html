@@ -736,7 +736,32 @@
               return response.json();
             })
             .then(function (data) {
-              const text = data && typeof data.reply === 'string' ? data.reply : '(No response payload received)';
+              let text = '(No response payload received)';
+              let messageContent = null;
+
+              if (data && data.message) {
+                if (typeof data.message.content === 'string') {
+                  messageContent = data.message.content;
+                } else if (Array.isArray(data.message.content)) {
+                  messageContent = data.message.content
+                    .map(function (chunk) {
+                      return typeof chunk === 'string' ? chunk : chunk && chunk.text ? chunk.text : '';
+                    })
+                    .join('')
+                    .trim();
+                  if (!messageContent) {
+                    messageContent = null;
+                  }
+                }
+              }
+
+              const reply = data && typeof data.reply === 'string' ? data.reply : null;
+
+              if (state.adapter === 'ollama') {
+                text = messageContent || reply || text;
+              } else {
+                text = reply || messageContent || text;
+              }
               appendBotMessage(text);
             })
             .catch(function (error) {
