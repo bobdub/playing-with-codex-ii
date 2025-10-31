@@ -124,6 +124,20 @@ remembers the preference on reload. Offline demo mode generates an echo locally,
 mirroring the bundled Python server’s behaviour so prompts can be rehearsed while the
 true model boots or connection issues are resolved.
 
+### Adapter presets
+
+Not every local LLM expects the same payload. The **LLM adapter** selector in the persona
+sidebar toggles the request format without touching code:
+
+- **Generic JSON (`/api/chat`)** – the original `{ message, history, persona }` contract.
+- **Ollama chat API** – send persona text as a `system` message and include conversation
+  turns in `messages` so Ollama can hold context. The endpoint input stores the Ollama
+  base URL (default `http://localhost:11434`) and an additional field captures the model
+  name.
+
+Every adapter remembers its own endpoint value in `localStorage`, making it easy to hop
+between different engines while troubleshooting.
+
 ---
 
 ## 6. Message flow breakdown

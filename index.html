@@ -284,6 +284,22 @@
         border-top: 1px solid rgba(148, 163, 184, 0.3);
       }
 
+      .persona-panel .adapter-group {
+        display: grid;
+        gap: 0.75rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid rgba(148, 163, 184, 0.3);
+      }
+
+      .persona-panel select {
+        width: 100%;
+        border-radius: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        padding: 0.75rem 1rem;
+        font: inherit;
+        background: rgba(255, 255, 255, 0.9);
+      }
+
       .persona-panel .endpoint-group h3 {
         margin: 0;
         font-size: 1.05rem;
@@ -297,6 +313,26 @@
         background: rgba(255, 255, 255, 0.82);
         display: grid;
         gap: 0.85rem;
+      }
+
+      .adapter-settings {
+        display: grid;
+        gap: 0.75rem;
+        padding: 0.75rem 0.85rem 0.85rem;
+        border-radius: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        background: rgba(248, 250, 252, 0.9);
+      }
+
+      .adapter-settings label {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--text-strong);
+      }
+
+      .adapter-settings .hint {
+        margin: 0;
+        background: rgba(15, 23, 42, 0.04);
       }
 
       .persona-panel .mode-group h3 {
@@ -363,6 +399,10 @@
         font-size: 0.88rem;
         line-height: 1.5;
         color: var(--text-muted);
+      }
+
+      .hidden {
+        display: none !important;
       }
 
       footer {
@@ -442,6 +482,35 @@
             <code>{ message, history, persona }</code>. The UI will display the reply immediately when received and fall back to an
             offline note if the endpoint is unreachable.
           </div>
+          <div class="adapter-group" aria-live="polite">
+            <h3>LLM adapter</h3>
+            <p class="description">
+              Choose how the garden formats each request so you can point it at different local servers without editing code.
+            </p>
+            <label class="sr-only" for="adapter-select">LLM adapter</label>
+            <select id="adapter-select" autocomplete="off">
+              <option value="generic">Generic JSON (/api/chat)</option>
+              <option value="ollama">Ollama chat API</option>
+            </select>
+            <div class="hint">
+              Pick the payload style that matches your model backend. Additional settings appear for specialised adapters.
+            </div>
+            <div class="adapter-settings hidden" data-ollama-settings>
+              <label for="ollama-model">Ollama model name</label>
+              <input
+                id="ollama-model"
+                type="text"
+                inputmode="text"
+                placeholder="llama3"
+                spellcheck="false"
+                autocomplete="off"
+              />
+              <div class="hint">
+                We'll send your persona as the <code>system</code> message and include conversation history so Ollama can hold
+                context.
+              </div>
+            </div>
+          </div>
           <div class="endpoint-group" aria-live="polite">
             <h3>Chat endpoint</h3>
             <p class="description">
@@ -458,9 +527,9 @@
             />
             <div class="actions">
               <button id="save-endpoint" class="primary" type="button">Save endpoint</button>
-              <button id="reset-endpoint" class="secondary" type="button">Use default (/api/chat)</button>
+              <button id="reset-endpoint" class="secondary" type="button">Use adapter default</button>
             </div>
-            <div class="hint">
+            <div class="hint" id="endpoint-hint">
               Requests are sent to this address. If the model listens elsewhere, enter the full URL (including protocol and port).
             </div>
           </div>
@@ -521,13 +590,29 @@
           'You are a thoughtful guide rooted in the values of privacy, open tooling, and gentle curiosity. Answer with clarity, warmth, and grounded imagination.';
         const endpointStorageKey = 'codex-ii::chat-endpoint';
         const responseModeStorageKey = 'codex-ii::response-mode';
+        const adapterStorageKey = 'codex-ii::adapter';
+        const ollamaEndpointStorageKey = 'codex-ii::ollama-endpoint';
+        const ollamaModelStorageKey = 'codex-ii::ollama-model';
         const defaultEndpoint = '/api/chat';
+        const defaultOllamaEndpoint = 'http://localhost:11434';
+        const knownAdapters = ['generic', 'ollama'];
+        const endpointHints = {
+          generic:
+            'Requests are sent to this address. If the model listens elsewhere, enter the full URL (including protocol and port).',
+          ollama:
+            'Set your Ollama host (defaults to <code>http://localhost:11434</code>). The garden will call <code>/api/chat</code> with your persona as the system prompt.'
+        };
+
         const personaInput = document.querySelector('#persona-input');
         const savePersonaButton = document.querySelector('#save-persona');
         const resetPersonaButton = document.querySelector('#reset-persona');
+        const adapterSelect = document.querySelector('#adapter-select');
         const endpointInput = document.querySelector('#endpoint-input');
+        const endpointHint = document.querySelector('#endpoint-hint');
         const saveEndpointButton = document.querySelector('#save-endpoint');
         const resetEndpointButton = document.querySelector('#reset-endpoint');
+        const ollamaSettings = document.querySelector('[data-ollama-settings]');
+        const ollamaModelInput = document.querySelector('#ollama-model');
         const responseModeInputs = Array.prototype.slice.call(
           document.querySelectorAll('input[name="response-mode"]')
         );
@@ -547,25 +632,41 @@
           userPersona: loadUserPersona(),
           persona: '',
           history: [],
-          endpoint: loadEndpoint(),
-          mode: loadResponseMode()
+          adapter: loadAdapter(),
+          endpoint: '',
+          mode: loadResponseMode(),
+          ollama: {
+            model: loadOllamaModel()
+          }
         };
+        let lastAnnouncedOllamaModel = state.ollama.model;
 
+        state.endpoint = loadEndpoint(state.adapter);
         state.persona = buildPersona(state.userPersona);
 
         if (personaInput) {
           personaInput.value = state.userPersona;
         }
 
-        if (endpointInput) {
-          endpointInput.value = state.endpoint;
+        syncAdapterUi();
+
+        if (ollamaModelInput) {
+          ollamaModelInput.value = state.ollama.model;
         }
 
         responseModeInputs.forEach(function (input) {
           input.checked = input.value === state.mode;
         });
 
-        appendMessage('system', 'System', 'Ready when you are. Your words stay on this machine.');
+        appendMessage(
+          'system',
+          'System',
+          'Ready when you are. Your words stay on this machine. Active adapter: ' +
+            describeAdapter(state.adapter) +
+            '. Target endpoint: ' +
+            displayEndpointForAdapter() +
+            '.'
+        );
 
         chatForm.addEventListener('submit', function (event) {
           event.preventDefault();
@@ -585,7 +686,6 @@
           messagesList.appendChild(typingNode);
           scrollToBottom();
 
-          const endpoint = state.endpoint || defaultEndpoint;
           const finishRequest = function () {
             if (typingNode && typingNode.parentNode) {
               typingNode.parentNode.removeChild(typingNode);
@@ -602,20 +702,36 @@
             return;
           }
 
-          fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              message: prompt,
-              history: state.history,
-              persona: state.persona
-            })
-          })
+          const requestConfig = buildRequestConfig({
+            adapter: state.adapter,
+            endpoint: state.endpoint,
+            prompt: prompt,
+            history: state.history,
+            persona: state.persona,
+            ollama: state.ollama
+          });
+
+          if (requestConfig.error) {
+            appendBotMessage(requestConfig.error, { record: false });
+            finishRequest();
+            return;
+          }
+
+          const requestUrl = requestConfig.url;
+
+          fetch(requestUrl, requestConfig.init)
             .then(function (response) {
               if (!response.ok) {
-                throw new Error('Server responded with ' + response.status);
+                const statusText = response.statusText ? ' ' + response.statusText : '';
+                return response
+                  .text()
+                  .catch(function () {
+                    return '';
+                  })
+                  .then(function (body) {
+                    const snippet = body ? ' — ' + truncate(body, 160) : '';
+                    throw new Error('Server responded with ' + response.status + statusText + snippet);
+                  });
               }
               return response.json();
             })
@@ -625,8 +741,10 @@
             })
             .catch(function (error) {
               const fallback =
-                'Your bot endpoint is sleeping. Wake a local model and listen on ' +
-                endpoint +
+                'Your bot endpoint is sleeping (' +
+                describeAdapter(state.adapter) +
+                '). Wake a local model and listen on ' +
+                requestUrl +
                 ' to chat for real.\n\nDebug: ' +
                 error.message;
               const suggestion =
@@ -668,18 +786,44 @@
           });
         }
 
+        if (adapterSelect) {
+          adapterSelect.addEventListener('change', function () {
+            const selectedValue = adapterSelect.value === 'ollama' ? 'ollama' : 'generic';
+            if (selectedValue === state.adapter) {
+              return;
+            }
+            state.adapter = selectedValue;
+            persistAdapter();
+            state.endpoint = loadEndpoint(state.adapter);
+            lastAnnouncedOllamaModel = state.ollama.model;
+            syncAdapterUi();
+            appendMessage(
+              'system',
+              'System',
+              'Adapter switched to ' +
+                describeAdapter(state.adapter) +
+                '. Current target: ' +
+                displayEndpointForAdapter() +
+                '. Update the endpoint or model if needed before sending.'
+            );
+            scrollToBottom();
+          });
+        }
+
         if (saveEndpointButton) {
           saveEndpointButton.addEventListener('click', function () {
             const rawValue = endpointInput ? endpointInput.value : '';
-            state.endpoint = normalizeEndpoint(rawValue);
-            if (endpointInput) {
-              endpointInput.value = state.endpoint;
-            }
+            state.endpoint = normalizeEndpoint(rawValue, state.adapter);
+            syncAdapterUi();
             persistEndpoint();
             appendMessage(
               'system',
               'System',
-              'Endpoint updated. Future requests will use ' + state.endpoint + '.'
+              'Endpoint updated for ' +
+                describeAdapter(state.adapter) +
+                '. Future requests will use ' +
+                displayEndpointForAdapter() +
+                '.'
             );
             scrollToBottom();
           });
@@ -687,12 +831,14 @@
 
         if (resetEndpointButton) {
           resetEndpointButton.addEventListener('click', function () {
-            state.endpoint = defaultEndpoint;
-            if (endpointInput) {
-              endpointInput.value = state.endpoint;
-            }
+            state.endpoint = getDefaultEndpoint(state.adapter);
+            syncAdapterUi();
             persistEndpoint();
-            appendMessage('system', 'System', 'Endpoint reset. Requests are routed to ' + defaultEndpoint + '.');
+            appendMessage(
+              'system',
+              'System',
+              'Endpoint reset. Requests are routed to ' + displayEndpointForAdapter() + '.'
+            );
             scrollToBottom();
           });
         }
@@ -712,10 +858,30 @@
               const notice =
                 newMode === 'demo'
                   ? 'Offline demo mode enabled. Replies are generated locally until you switch back.'
-                  : 'Live endpoint mode enabled. Requests will be sent to ' + state.endpoint + '.';
+                  : 'Live endpoint mode enabled. Requests will be sent to ' + displayEndpointForAdapter() + '.';
               appendMessage('system', 'System', notice);
               scrollToBottom();
             });
+          });
+        }
+
+        if (ollamaModelInput) {
+          ollamaModelInput.addEventListener('input', function () {
+            state.ollama.model = ollamaModelInput.value.trim();
+            persistOllamaModel();
+          });
+          ollamaModelInput.addEventListener('change', function () {
+            const current = ollamaModelInput.value.trim();
+            state.ollama.model = current;
+            if (state.adapter === 'ollama' && current !== lastAnnouncedOllamaModel) {
+              lastAnnouncedOllamaModel = current;
+              appendMessage(
+                'system',
+                'System',
+                'Ollama model set to ' + (current || 'llama3') + '.'
+              );
+              scrollToBottom();
+            }
           });
         }
 
@@ -841,24 +1007,27 @@
           }
         }
 
-        function loadEndpoint() {
+        function loadEndpoint(adapter) {
+          const storageKey = getEndpointStorageKey(adapter);
           try {
-            const stored = window.localStorage.getItem(endpointStorageKey);
+            const stored = window.localStorage.getItem(storageKey);
             if (stored) {
-              return normalizeEndpoint(stored);
+              return normalizeEndpoint(stored, adapter);
             }
           } catch (error) {
             console.warn('Unable to read chat endpoint from storage', error);
           }
-          return defaultEndpoint;
+          return getDefaultEndpoint(adapter);
         }
 
         function persistEndpoint() {
+          const storageKey = getEndpointStorageKey(state.adapter);
+          const defaultValue = getDefaultEndpoint(state.adapter);
           try {
-            if (!state.endpoint || state.endpoint === defaultEndpoint) {
-              window.localStorage.removeItem(endpointStorageKey);
+            if (!state.endpoint || state.endpoint === defaultValue) {
+              window.localStorage.removeItem(storageKey);
             } else {
-              window.localStorage.setItem(endpointStorageKey, state.endpoint);
+              window.localStorage.setItem(storageKey, state.endpoint);
             }
           } catch (error) {
             console.warn('Unable to store chat endpoint', error);
@@ -889,6 +1058,186 @@
           }
         }
 
+        function loadAdapter() {
+          try {
+            const stored = window.localStorage.getItem(adapterStorageKey);
+            if (stored && knownAdapters.indexOf(stored) !== -1) {
+              return stored;
+            }
+          } catch (error) {
+            console.warn('Unable to read adapter selection from storage', error);
+          }
+          return 'generic';
+        }
+
+        function persistAdapter() {
+          try {
+            if (!state.adapter || state.adapter === 'generic') {
+              window.localStorage.removeItem(adapterStorageKey);
+            } else {
+              window.localStorage.setItem(adapterStorageKey, state.adapter);
+            }
+          } catch (error) {
+            console.warn('Unable to store adapter selection', error);
+          }
+        }
+
+        function loadOllamaModel() {
+          try {
+            const stored = window.localStorage.getItem(ollamaModelStorageKey);
+            if (stored !== null) {
+              const trimmed = stored.trim();
+              return trimmed || 'llama3';
+            }
+          } catch (error) {
+            console.warn('Unable to read Ollama model preference', error);
+          }
+          return 'llama3';
+        }
+
+        function persistOllamaModel() {
+          try {
+            if (!state.ollama.model || state.ollama.model === 'llama3') {
+              window.localStorage.removeItem(ollamaModelStorageKey);
+            } else {
+              window.localStorage.setItem(ollamaModelStorageKey, state.ollama.model);
+            }
+          } catch (error) {
+            console.warn('Unable to store Ollama model preference', error);
+          }
+        }
+
+        function getDefaultEndpoint(adapter) {
+          return adapter === 'ollama' ? defaultOllamaEndpoint : defaultEndpoint;
+        }
+
+        function getEndpointStorageKey(adapter) {
+          return adapter === 'ollama' ? ollamaEndpointStorageKey : endpointStorageKey;
+        }
+
+        function normalizeEndpoint(value, adapter) {
+          const trimmed = value ? value.trim() : '';
+          if (!trimmed) {
+            return getDefaultEndpoint(adapter);
+          }
+          let normalized = trimmed;
+          if (!/^https?:\/\//i.test(normalized) && !normalized.startsWith('/')) {
+            normalized = 'http://' + normalized;
+          }
+          if (normalized.length > 1 && /\/$/.test(normalized)) {
+            normalized = normalized.replace(/\/+$/, '');
+          }
+          return normalized;
+        }
+
+        function syncAdapterUi() {
+          if (adapterSelect) {
+            adapterSelect.value = state.adapter;
+          }
+          if (endpointInput) {
+            endpointInput.placeholder = getDefaultEndpoint(state.adapter);
+            endpointInput.value = state.endpoint;
+          }
+          if (endpointHint) {
+            endpointHint.innerHTML = endpointHints[state.adapter] || endpointHints.generic;
+          }
+          toggleOllamaSettings(state.adapter === 'ollama');
+        }
+
+        function toggleOllamaSettings(show) {
+          if (!ollamaSettings) {
+            return;
+          }
+          if (show) {
+            ollamaSettings.classList.remove('hidden');
+            if (ollamaModelInput) {
+              ollamaModelInput.value = state.ollama.model;
+            }
+          } else {
+            ollamaSettings.classList.add('hidden');
+          }
+        }
+
+        function describeAdapter(adapter) {
+          return adapter === 'ollama' ? 'Ollama chat API' : 'Generic JSON endpoint';
+        }
+
+        function displayEndpointForAdapter() {
+          return state.adapter === 'ollama' ? joinOllamaEndpoint(state.endpoint) : state.endpoint;
+        }
+
+        function buildRequestConfig(options) {
+          if (options.adapter === 'ollama') {
+            return buildOllamaRequest(options);
+          }
+          return buildGenericRequest(options);
+        }
+
+        function buildGenericRequest(options) {
+          const target = options.endpoint || defaultEndpoint;
+          return {
+            url: target,
+            init: {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                message: options.prompt,
+                history: options.history,
+                persona: options.persona
+              })
+            }
+          };
+        }
+
+        function buildOllamaRequest(options) {
+          const base = options.endpoint || defaultOllamaEndpoint;
+          const modelName =
+            options.ollama && options.ollama.model ? options.ollama.model.trim() : 'llama3';
+          const payload = {
+            model: modelName || 'llama3',
+            messages: prepareOllamaMessages(options.history, options.persona),
+            stream: false
+          };
+          return {
+            url: joinOllamaEndpoint(base),
+            init: {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(payload)
+            }
+          };
+        }
+
+        function prepareOllamaMessages(history, persona) {
+          const messages = [];
+          if (persona) {
+            messages.push({ role: 'system', content: persona });
+          }
+          if (Array.isArray(history)) {
+            history.forEach(function (entry) {
+              if (!entry || typeof entry.content !== 'string' || !entry.content) {
+                return;
+              }
+              const role = entry.role === 'assistant' ? 'assistant' : 'user';
+              messages.push({ role: role, content: entry.content });
+            });
+          }
+          return messages;
+        }
+
+        function joinOllamaEndpoint(base) {
+          const normalized = normalizeEndpoint(base, 'ollama');
+          const trimmed = normalized.replace(/\/+$/, '');
+          if (trimmed.toLowerCase().endsWith('/api/chat')) {
+            return trimmed;
+          }
+          return trimmed + '/api/chat';
+        }
+
         function buildOfflineReply(message, history, persona) {
           if (!message) {
             return 'Offline demo channel connected. Share a prompt to rehearse while your model boots up.';
@@ -904,16 +1253,16 @@
           return 'Offline demo echo' + prefix + ': ' + message;
         }
 
-        function normalizeEndpoint(value) {
-          const trimmed = value ? value.trim() : '';
-          if (!trimmed) {
-            return defaultEndpoint;
+        function truncate(text, maxLength) {
+          if (typeof text !== 'string' || maxLength <= 0) {
+            return '';
           }
-          if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith('/')) {
-            return trimmed;
+          if (text.length <= maxLength) {
+            return text;
           }
-          return 'http://' + trimmed;
+          return text.slice(0, maxLength - 1) + '…';
         }
+
       })();
     </script>
   </body>
