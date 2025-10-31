@@ -13,6 +13,8 @@ can iterate on tone and instructions without relying on remote services.
   chooses to persist it.
 - **Customisable system persona** – edit the bot personality in the side panel; the value
   is written to `localStorage` and reloaded on refresh.
+- **Configurable chat endpoint** – point the UI at any reachable `/api/chat` URL so remote
+  or local model processes can respond.
 - **Graceful offline state** – if the `/api/chat` endpoint is unreachable the UI shows an
   informative fallback instead of failing silently.
 - **Accessible, responsive UI** – semantic markup with ARIA roles, keyboard friendly
@@ -22,7 +24,8 @@ can iterate on tone and instructions without relying on remote services.
 
 1. Run the bundled development server: `python server.py` (use `--port` to change the port).
 2. Visit `http://localhost:8000` (or the host/port you selected) and start chatting.
-3. When you're ready, swap the demo backend for your model process by handling `POST /api/chat`.
+3. Update the **Chat endpoint** field in the sidebar if your model listens on a different host or port.
+4. When you're ready, swap the demo backend for your model process by handling `POST /api/chat`.
 
 The frontend expects JSON shaped like the following:
 
