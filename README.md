@@ -15,6 +15,8 @@ can iterate on tone and instructions without relying on remote services.
   is written to `localStorage` and reloaded on refresh.
 - **Configurable chat endpoint** – point the UI at any reachable `/api/chat` URL so remote
   or local model processes can respond.
+- **Adapter-aware requests** – switch between the generic JSON contract and an Ollama chat
+  payload without touching the code so you can try different local LLM engines quickly.
 - **Graceful offline state** – if the `/api/chat` endpoint is unreachable the UI shows an
   informative fallback instead of failing silently.
 - **Offline demo mode** – generate local echo replies so you can practice prompts while the
@@ -60,6 +62,11 @@ Implementations can use `history` and `persona` to maintain context when calling
 Always return within a reasonable time; the UI disables the **Send** button while waiting
 but does not apply client-side timeouts. The included `server.py` script simply echoes
 the user's latest message so you can validate the UI before wiring up a real model.
+
+Select **Ollama chat API** in the new *LLM adapter* sidebar panel to try Ollama without
+changing code. Set the base URL of your Ollama daemon (default `http://localhost:11434`)
+and the desired model name—the UI converts persona text into a `system` message and
+passes the running `history` as `messages`.
 
 ## Persona controls
 
