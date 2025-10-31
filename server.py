@@ -19,6 +19,7 @@ import posixpath
 from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from typing import Dict, List, Tuple
+from urllib.parse import urlsplit
 
 try:
     from http.server import SimpleHTTPRequestHandler
@@ -75,14 +76,26 @@ class ChatGardenHandler(SimpleHTTPRequestHandler):
 
     def translate_path(self, path: str) -> str:
         """Restrict static file lookups to the repository directory."""
-        # `SimpleHTTPRequestHandler` attempts to walk the filesystem. Constrain
-        # lookups so `/..` cannot escape the project root.
-        path = posixpath.normpath(path)
-        parts = [part for part in path.split("/") if part]
-        full_path = StaticDir
-        for part in parts:
-            full_path = os.path.join(full_path, part)
-        return full_path
+        # Mirror `SimpleHTTPRequestHandler` path normalization so `..` segments
+        # are stripped before joining against our repository root.
+        parsed_path = urlsplit(path).path
+        normalized = posixpath.normpath(parsed_path)
+        root = os.path.realpath(StaticDir)
+        full_path = root
+
+        for segment in normalized.split("/"):
+            if not segment:
+                continue
+            drive, segment = os.path.splitdrive(segment)
+            _, segment = os.path.split(segment)
+            if segment in (os.curdir, os.pardir):
+                continue
+            full_path = os.path.join(full_path, segment)
+
+        resolved = os.path.realpath(full_path)
+        if os.path.commonpath([resolved, root]) != root:
+            return root
+        return resolved
 
 
 def _coerce_text(value: object) -> str:
