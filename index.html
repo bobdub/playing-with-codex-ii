@@ -736,7 +736,16 @@
               return response.json();
             })
             .then(function (data) {
-              const text = data && typeof data.reply === 'string' ? data.reply : '(No response payload received)';
+              let text = '(No response payload received)';
+              if (state.adapter === 'ollama') {
+                if (data && data.message && typeof data.message.content === 'string') {
+                  text = data.message.content;
+                }
+              } else if (data && typeof data.reply === 'string') {
+                text = data.reply;
+              } else if (data && data.message && typeof data.message.content === 'string') {
+                text = data.message.content;
+              }
               appendBotMessage(text);
             })
             .catch(function (error) {
