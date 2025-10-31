@@ -1,5 +1,7 @@
 # Codex II Chat Garden
 
+[Live Site](https://bobdub.github.io/playing-with-codex-ii/)
+
 Codex II is a local-first chat interface that lets you speak to an LLM running on your
 own machine. The app is a single static page (`index.html`) that calls a lightweight
 HTTP endpoint you host at `/api/chat`. Persona prompts are stored in the browser so you
