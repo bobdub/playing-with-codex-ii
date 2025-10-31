@@ -461,13 +461,14 @@
             .then(function (data) {
               const text = data && typeof data.reply === 'string' ? data.reply : '(No response payload received)';
               appendBotMessage(text);
-            }, function (error) {
+            })
+            .catch(function (error) {
               const fallback =
                 'Your bot endpoint is sleeping. Wake a local model and listen on /api/chat to chat for real.\n\n' +
                 'Debug: ' + error.message;
-              appendBotMessage(fallback);
+              appendBotMessage(fallback, { record: false });
             })
-            .then(function () {
+            .finally(function () {
               if (typingNode && typingNode.parentNode) {
                 typingNode.parentNode.removeChild(typingNode);
               }
@@ -506,9 +507,12 @@
           });
         }
 
-        function appendBotMessage(text) {
+        function appendBotMessage(text, options) {
           const safeText = typeof text === 'string' ? text : String(text);
-          state.history.push({ role: 'assistant', content: safeText });
+          const shouldRecord = !options || options.record !== false;
+          if (shouldRecord) {
+            state.history.push({ role: 'assistant', content: safeText });
+          }
           appendMessage('bot', 'Bot', safeText);
         }
 
