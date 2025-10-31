@@ -289,6 +289,57 @@
         font-size: 1.05rem;
       }
 
+      .persona-panel .mode-group {
+        margin-top: 1.75rem;
+        padding: 1.25rem 1.35rem;
+        border-radius: 18px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        background: rgba(255, 255, 255, 0.82);
+        display: grid;
+        gap: 0.85rem;
+      }
+
+      .persona-panel .mode-group h3 {
+        margin: 0;
+        font-size: 1.05rem;
+      }
+
+      .mode-options {
+        display: grid;
+        gap: 0.65rem;
+      }
+
+      .mode-option {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.65rem;
+        align-items: flex-start;
+        padding: 0.6rem 0.65rem;
+        border-radius: 12px;
+        transition: background 150ms ease;
+      }
+
+      .mode-option:hover {
+        background: rgba(108, 92, 231, 0.08);
+      }
+
+      .mode-option input[type="radio"] {
+        margin-top: 0.15rem;
+      }
+
+      .mode-option strong {
+        display: block;
+        font-size: 0.98rem;
+        margin-bottom: 0.15rem;
+        color: var(--text-strong);
+      }
+
+      .mode-option span {
+        font-size: 0.9rem;
+        color: var(--text-muted);
+        line-height: 1.5;
+      }
+
       .persona-panel button.secondary {
         border: 1px solid rgba(108, 92, 231, 0.4);
         border-radius: 14px;
@@ -413,6 +464,28 @@
               Requests are sent to this address. If the model listens elsewhere, enter the full URL (including protocol and port).
             </div>
           </div>
+          <div class="mode-group">
+            <h3>Response mode</h3>
+            <p class="description">
+              Choose how the garden answers when you press send. Stay in live mode for real conversations or switch to a local demo while your model warms up.
+            </p>
+            <div class="mode-options" role="radiogroup" aria-label="Response mode">
+              <label class="mode-option" for="mode-live">
+                <input type="radio" id="mode-live" name="response-mode" value="live" />
+                <span>
+                  <strong>Live endpoint</strong>
+                  Send every prompt to the configured <code>/api/chat</code> URL and display the real reply from your model server.
+                </span>
+              </label>
+              <label class="mode-option" for="mode-demo">
+                <input type="radio" id="mode-demo" name="response-mode" value="demo" />
+                <span>
+                  <strong>Offline demo</strong>
+                  Generate a quick local echo so you can rehearse prompts even when no backend is available.
+                </span>
+              </label>
+            </div>
+          </div>
         </aside>
       </main>
       <footer>
@@ -447,6 +520,7 @@
         const legacyDefaultPersona =
           'You are a thoughtful guide rooted in the values of privacy, open tooling, and gentle curiosity. Answer with clarity, warmth, and grounded imagination.';
         const endpointStorageKey = 'codex-ii::chat-endpoint';
+        const responseModeStorageKey = 'codex-ii::response-mode';
         const defaultEndpoint = '/api/chat';
         const personaInput = document.querySelector('#persona-input');
         const savePersonaButton = document.querySelector('#save-persona');
@@ -454,6 +528,9 @@
         const endpointInput = document.querySelector('#endpoint-input');
         const saveEndpointButton = document.querySelector('#save-endpoint');
         const resetEndpointButton = document.querySelector('#reset-endpoint');
+        const responseModeInputs = Array.prototype.slice.call(
+          document.querySelectorAll('input[name="response-mode"]')
+        );
         const messagesList = document.querySelector('#messages');
         const chatForm = document.querySelector('#chat-form');
         const chatInput = document.querySelector('#chat-input');
@@ -470,7 +547,8 @@
           userPersona: loadUserPersona(),
           persona: '',
           history: [],
-          endpoint: loadEndpoint()
+          endpoint: loadEndpoint(),
+          mode: loadResponseMode()
         };
 
         state.persona = buildPersona(state.userPersona);
@@ -482,6 +560,10 @@
         if (endpointInput) {
           endpointInput.value = state.endpoint;
         }
+
+        responseModeInputs.forEach(function (input) {
+          input.checked = input.value === state.mode;
+        });
 
         appendMessage('system', 'System', 'Ready when you are. Your words stay on this machine.');
 
@@ -504,6 +586,21 @@
           scrollToBottom();
 
           const endpoint = state.endpoint || defaultEndpoint;
+          const finishRequest = function () {
+            if (typingNode && typingNode.parentNode) {
+              typingNode.parentNode.removeChild(typingNode);
+            }
+            sendButton.disabled = false;
+            scrollToBottom();
+          };
+
+          if (state.mode === 'demo') {
+            window.setTimeout(function () {
+              appendBotMessage(buildOfflineReply(prompt, state.history, state.persona));
+              finishRequest();
+            }, 320);
+            return;
+          }
 
           fetch(endpoint, {
             method: 'POST',
@@ -532,15 +629,11 @@
                 endpoint +
                 ' to chat for real.\n\nDebug: ' +
                 error.message;
-              appendBotMessage(fallback, { record: false });
+              const suggestion =
+                '\n\nTip: Switch to Offline demo mode in the sidebar to keep practicing while you troubleshoot.';
+              appendBotMessage(fallback + suggestion, { record: false });
             })
-            .finally(function () {
-              if (typingNode && typingNode.parentNode) {
-                typingNode.parentNode.removeChild(typingNode);
-              }
-              sendButton.disabled = false;
-              scrollToBottom();
-            });
+            .finally(finishRequest);
         });
 
         chatInput.addEventListener('input', function () {
@@ -601,6 +694,28 @@
             persistEndpoint();
             appendMessage('system', 'System', 'Endpoint reset. Requests are routed to ' + defaultEndpoint + '.');
             scrollToBottom();
+          });
+        }
+
+        if (responseModeInputs.length) {
+          responseModeInputs.forEach(function (input) {
+            input.addEventListener('change', function () {
+              if (!input.checked) {
+                return;
+              }
+              const newMode = input.value === 'demo' ? 'demo' : 'live';
+              if (newMode === state.mode) {
+                return;
+              }
+              state.mode = newMode;
+              persistResponseMode();
+              const notice =
+                newMode === 'demo'
+                  ? 'Offline demo mode enabled. Replies are generated locally until you switch back.'
+                  : 'Live endpoint mode enabled. Requests will be sent to ' + state.endpoint + '.';
+              appendMessage('system', 'System', notice);
+              scrollToBottom();
+            });
           });
         }
 
@@ -748,6 +863,45 @@
           } catch (error) {
             console.warn('Unable to store chat endpoint', error);
           }
+        }
+
+        function loadResponseMode() {
+          try {
+            const stored = window.localStorage.getItem(responseModeStorageKey);
+            if (stored === 'demo' || stored === 'live') {
+              return stored;
+            }
+          } catch (error) {
+            console.warn('Unable to read response mode from storage', error);
+          }
+          return 'live';
+        }
+
+        function persistResponseMode() {
+          try {
+            if (!state.mode || state.mode === 'live') {
+              window.localStorage.removeItem(responseModeStorageKey);
+            } else {
+              window.localStorage.setItem(responseModeStorageKey, state.mode);
+            }
+          } catch (error) {
+            console.warn('Unable to store response mode', error);
+          }
+        }
+
+        function buildOfflineReply(message, history, persona) {
+          if (!message) {
+            return 'Offline demo channel connected. Share a prompt to rehearse while your model boots up.';
+          }
+          const prefixParts = [];
+          if (persona) {
+            prefixParts.push('persona active');
+          }
+          if (Array.isArray(history) && history.length) {
+            prefixParts.push('history has ' + history.length + ' entries');
+          }
+          const prefix = prefixParts.length ? ' (' + prefixParts.join(', ') + ')' : '';
+          return 'Offline demo echo' + prefix + ': ' + message;
         }
 
         function normalizeEndpoint(value) {

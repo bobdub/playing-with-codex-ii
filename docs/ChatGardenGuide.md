@@ -115,6 +115,15 @@ Caretakers can adjust the chat backend without rebuilding the page:
 The resolved URL is used for every `fetch` call, and the transcript records system
 messages whenever the target changes so caretakers have an audit trail.
 
+### Response modes
+
+A radio group labelled **Response mode** in the sidebar lets caretakers choose between
+real backend calls (*Live endpoint*) and a client-side fallback (*Offline demo*).
+The selected value is stored in `localStorage` (`codex-ii::response-mode`) so the page
+remembers the preference on reload. Offline demo mode generates an echo locally,
+mirroring the bundled Python server’s behaviour so prompts can be rehearsed while the
+true model boots or connection issues are resolved.
+
 ---
 
 ## 6. Message flow breakdown
@@ -122,9 +131,12 @@ messages whenever the target changes so caretakers have an audit trail.
 1. User submits the form – empty or whitespace-only prompts are ignored.
 2. UI pushes the user turn into `state.history` and renders it immediately.
 3. A typing indicator element is inserted using the `#typing-template` blueprint.
-4. `fetch(state.endpoint, …)` sends the payload to the selected backend URL.
+4. If **Offline demo** is active, a short delay is applied before generating a local
+   echo reply; otherwise `fetch(state.endpoint, …)` sends the payload to the selected
+   backend URL.
 5. On success, the reply is appended via `appendBotMessage()` and captured in history.
-6. On failure, a fallback message is appended instead of leaving the transcript blank.
+6. On network failure, a fallback message is appended with a reminder that demo mode is
+   available while troubleshooting.
 7. The typing indicator is removed, and the send button is re-enabled.
 
 `scrollToBottom()` attempts smooth scrolling with `Element.scrollTo({ behavior: 'smooth' })`
