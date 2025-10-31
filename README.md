@@ -17,6 +17,8 @@ can iterate on tone and instructions without relying on remote services.
   or local model processes can respond.
 - **Graceful offline state** – if the `/api/chat` endpoint is unreachable the UI shows an
   informative fallback instead of failing silently.
+- **Offline demo mode** – generate local echo replies so you can practice prompts while the
+  real backend is offline.
 - **Accessible, responsive UI** – semantic markup with ARIA roles, keyboard friendly
   forms, and a layout that adapts from desktop to narrow screens.
 
@@ -26,6 +28,8 @@ can iterate on tone and instructions without relying on remote services.
 2. Visit `http://localhost:8000` (or the host/port you selected) and start chatting.
 3. Update the **Chat endpoint** field in the sidebar if your model listens on a different host or port.
 4. When you're ready, swap the demo backend for your model process by handling `POST /api/chat`.
+5. If the backend is unavailable, toggle **Offline demo** in the sidebar to receive
+   client-side echo replies while you troubleshoot.
 
 The frontend expects JSON shaped like the following:
 
