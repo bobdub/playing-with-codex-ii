@@ -23,6 +23,8 @@ can iterate on tone and instructions without relying on remote services.
   real backend is offline.
 - **Accessible, responsive UI** – semantic markup with ARIA roles, keyboard friendly
   forms, and a layout that adapts from desktop to narrow screens.
+- **Fast composer shortcuts** – send messages with Enter while keeping Shift+Enter for
+  multi-line prompts.
 
 ## Quick start
 

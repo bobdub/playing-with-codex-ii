@@ -211,6 +211,14 @@
         outline: none;
       }
 
+      form.chat-composer .composer-hint {
+        grid-column: 1 / -1;
+        margin: -0.15rem 0 0;
+        padding: 0 0.5rem 0.4rem 1rem;
+        font-size: 0.82rem;
+        color: var(--text-muted);
+      }
+
       button.primary {
         border: none;
         border-radius: 16px;
@@ -459,9 +467,13 @@
               id="chat-input"
               name="prompt"
               placeholder="Share your question or story..."
+              aria-describedby="composer-hint"
               required
             ></textarea>
             <button id="send-button" class="primary" type="submit">Send</button>
+            <p id="composer-hint" class="composer-hint">
+              Press Enter to send · Shift+Enter for a new line
+            </p>
           </form>
         </section>
         <aside class="panel persona-panel" aria-label="Persona controls">
@@ -783,6 +795,28 @@
           chatInput.style.height = 'auto';
           chatInput.style.height = Math.min(chatInput.scrollHeight, 220) + 'px';
         });
+
+        if (chatInput && chatForm) {
+          chatInput.addEventListener('keydown', function (event) {
+            if (event.isComposing || event.key !== 'Enter') {
+              return;
+            }
+            if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
+              return;
+            }
+            const value = chatInput.value ? chatInput.value.trim() : '';
+            if (!value || sendButton.disabled) {
+              return;
+            }
+            event.preventDefault();
+            if (typeof chatForm.requestSubmit === 'function') {
+              chatForm.requestSubmit(sendButton);
+            } else {
+              const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+              chatForm.dispatchEvent(submitEvent);
+            }
+          });
+        }
 
         if (savePersonaButton) {
           savePersonaButton.addEventListener('click', function () {
