@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chat Garden LLM</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link
+      rel="preconnect"
+      href="https://fonts.googleapis.com"
+    />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="aurora" aria-hidden="true"></div>
+    <div class="app-shell">
+      <header class="hero">
+        <div class="hero__content">
+          <p class="hero__eyebrow">Project Kickoff · Local-first neural garden</p>
+          <h1>Chat Garden LLM</h1>
+          <p class="hero__lede">
+            Plant the foundation for a self-learning assistant that blossoms directly
+            in the browser. Curate seeds of knowledge, observe live metrics, and
+            let the garden synthesize gentle replies from the stories you store.
+          </p>
+        </div>
+        <div class="hero__status">
+          <div class="status-card">
+            <span class="status-card__label">Dataset seeds</span>
+            <span class="status-card__value" id="seed-count">0</span>
+          </div>
+          <div class="status-card">
+            <span class="status-card__label">Learning streak</span>
+            <span class="status-card__value" id="streak-count">0 days</span>
+          </div>
+          <div class="status-card">
+            <span class="status-card__label">Last tended</span>
+            <span class="status-card__value" id="last-tended">—</span>
+          </div>
+        </div>
+      </header>
+      <main class="layout">
+        <section class="panel panel--primary" aria-labelledby="chat-title">
+          <div class="panel__header">
+            <div>
+              <h2 id="chat-title">Conversation stream</h2>
+              <p class="panel__subtitle">
+                Capture dialogue and watch how the garden adapts with every exchange.
+              </p>
+            </div>
+            <div class="panel__actions">
+              <button class="ghost" id="clear-convo" type="button">Start fresh</button>
+              <button class="ghost" id="export-data" type="button">Export data</button>
+            </div>
+          </div>
+          <div class="messages" id="message-feed" aria-live="polite"></div>
+          <form class="composer" id="composer" autocomplete="off">
+            <label class="composer__label" for="message-input">Message the garden</label>
+            <textarea
+              id="message-input"
+              name="message"
+              rows="3"
+              placeholder="Ask the garden what it has learned so far..."
+              required
+            ></textarea>
+            <div class="composer__footer">
+              <label class="slider">
+                <span>Creative drift</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value="35"
+                  id="creativity"
+                  name="creativity"
+                />
+              </label>
+              <button type="submit" class="primary">Grow a reply</button>
+            </div>
+          </form>
+        </section>
+        <aside class="panel panel--secondary">
+          <div class="panel__section" aria-labelledby="ledger-title">
+            <h2 id="ledger-title">Learning ledger</h2>
+            <p class="panel__subtitle">
+              Store curated prompt-response pairs. Each seed deepens the garden’s context
+              and guides future synthesis.
+            </p>
+            <form class="seed-form" id="seed-form">
+              <label for="seed-prompt">Prompt</label>
+              <textarea id="seed-prompt" rows="2" placeholder="How do we welcome new caretakers?" required></textarea>
+              <label for="seed-response">Response</label>
+              <textarea id="seed-response" rows="3" placeholder="We honor curiosity, patience, and gentle iteration." required></textarea>
+              <label for="seed-tags">Metadata tags</label>
+              <input id="seed-tags" type="text" placeholder="onboarding, ethics, tone" />
+              <button type="submit" class="secondary">Plant seed</button>
+            </form>
+          </div>
+          <div class="panel__section" aria-labelledby="metrics-title">
+            <h2 id="metrics-title">Telemetry</h2>
+            <dl class="metrics" id="metrics">
+              <div>
+                <dt>Total messages</dt>
+                <dd data-stat="total-messages">0</dd>
+              </div>
+              <div>
+                <dt>User inputs</dt>
+                <dd data-stat="user-messages">0</dd>
+              </div>
+              <div>
+                <dt>Garden replies</dt>
+                <dd data-stat="garden-messages">0</dd>
+              </div>
+              <div>
+                <dt>Average seed usage</dt>
+                <dd data-stat="avg-seed-usage">0</dd>
+              </div>
+              <div>
+                <dt>Last interaction</dt>
+                <dd data-stat="last-interaction">—</dd>
+              </div>
+            </dl>
+          </div>
+          <div class="panel__section" aria-labelledby="library-title">
+            <h2 id="library-title">Seed library</h2>
+            <p class="panel__subtitle">
+              Recent knowledge seeds with metadata. The garden references these when synthesizing replies.
+            </p>
+            <ul class="seed-list" id="seed-list"></ul>
+          </div>
+        </aside>
+      </main>
+    </div>
+    <template id="message-template">
+      <article class="message">
+        <div class="message__avatar" data-role></div>
+        <div class="message__body">
+          <header class="message__meta">
+            <span class="message__author" data-author></span>
+            <span class="message__timestamp" data-timestamp></span>
+          </header>
+          <p class="message__content" data-content></p>
+          <footer class="message__footer" data-footer></footer>
+        </div>
+      </article>
+    </template>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
