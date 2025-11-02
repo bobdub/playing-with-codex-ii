@@ -268,6 +268,7 @@ function addMessage(role, content, meta = {}) {
 
 function synthesizeResponse(content, creativity) {
   const tokens = tokenize(content);
+  const tags = deriveTags(content);
   const match = findBestSeed(tokens);
   const creativityFactor = creativity / 100;
   const tone = creativityFactor > 0.6 ? "imaginative" : creativityFactor > 0.3 ? "reflective" : "grounded";
@@ -277,8 +278,8 @@ function synthesizeResponse(content, creativity) {
     const blended = blendSeedResponse(match.seed.response, content, creativityFactor);
     const qScore = buildQScore({
       strategy: "seed-match",
-      similarity: match.score,
-      creativityFactor,
+      tags,
+      seed: match.seed,
     });
     return {
       text: infusePersonality(blended, tone, creativityFactor, qScore),
@@ -290,7 +291,7 @@ function synthesizeResponse(content, creativity) {
         persona: personality.name,
         channel: personality.channels[tone],
         drift: Math.round(creativityFactor * 100),
-        tags: deriveTags(content),
+        tags,
         protocol: qScore.protocol,
         qScore,
       },
@@ -306,7 +307,7 @@ function synthesizeResponse(content, creativity) {
   const offset = Math.min(fallback.length - 1, Math.floor(creativityFactor * fallback.length));
   const qScore = buildQScore({
     strategy: "fallback",
-    creativityFactor,
+    tags,
   });
 
   return {
@@ -317,7 +318,7 @@ function synthesizeResponse(content, creativity) {
       persona: personality.name,
       channel: personality.channels[tone],
       drift: Math.round(creativityFactor * 100),
-      tags: deriveTags(content),
+      tags,
       protocol: qScore.protocol,
       qScore,
     },
@@ -453,30 +454,38 @@ function buildFooter(meta = {}, role) {
   return [chipMarkup, hintMarkup].filter(Boolean).join(" ");
 }
 
-function buildQScore({ strategy, similarity = 0, creativityFactor = 0 }) {
-  const clamp = (value) => Math.round(Math.max(0, Math.min(100, value)));
-  const normalizedSimilarity = Math.max(0, Math.min(1, similarity));
-  const semantic =
-    strategy === "seed-match"
-      ? 60 + normalizedSimilarity * 40
-      : 45 + creativityFactor * 25;
-  const logical = 55 + (1 - Math.abs(0.5 - creativityFactor) * 2) * 25;
-  const ethics =
-    strategy === "seed-match"
-      ? 88 - creativityFactor * 8
-      : 82 - creativityFactor * 12;
+const BASE_Q_SCORE = 0.0001 * Math.E;
+const LOCAL_DATA_FACTOR = 0.00005;
 
-  const semanticScore = clamp(semantic);
-  const logicalScore = clamp(logical);
-  const ethicsScore = clamp(ethics);
-  const total = clamp((semanticScore + logicalScore + ethicsScore) / 3);
+function buildQScore({ strategy, tags = [], seed = null }) {
+  const localSeeds = state.seeds.length;
+  const localMessages = Math.max(0, state.messages.length - 1);
+  const localDataContribution = Math.log1p(localSeeds + localMessages) * LOCAL_DATA_FACTOR;
+
+  const pairBonus = strategy === "seed-match" ? 0.001 : 0;
+
+  const relevantTags = tags.filter(Boolean);
+  const seedTags = seed?.tags ?? [];
+  const tagAlignment =
+    relevantTags.length > 0 &&
+    (seedTags.length
+      ? seedTags.some((tag) => relevantTags.includes(tag))
+      : state.seeds.some((existing) => existing.tags.some((tag) => relevantTags.includes(tag))));
+  const tagBonus = tagAlignment ? 0.001 : 0;
+
+  const semanticScore = BASE_Q_SCORE + localDataContribution + pairBonus;
+  const logicalScore = BASE_Q_SCORE + localDataContribution;
+  const ethicsScore = BASE_Q_SCORE + localDataContribution + tagBonus;
+
+  const totalValue = BASE_Q_SCORE + localDataContribution + pairBonus + tagBonus;
+  const total = Number(totalValue.toFixed(6));
 
   return {
-    total,
+    total: total.toFixed(6),
     components: {
-      semantic: semanticScore,
-      logical: logicalScore,
-      ethics: ethicsScore,
+      semantic: semanticScore.toFixed(6),
+      logical: logicalScore.toFixed(6),
+      ethics: ethicsScore.toFixed(6),
     },
     protocol: "Infinity & Beyond",
     strategy,
