@@ -1,6 +1,7 @@
 const STORAGE_KEY = "chat-garden-state-v1";
 const STALE_HOURS_THRESHOLD = 48;
 const LOW_SIMILARITY_THRESHOLD = 0.35;
+const TAG_PROMOTION_INTERVAL = 1000 * 60;
 
 const personality = {
   name: "Ψ_Infinity",
@@ -70,6 +71,16 @@ function mergeDeep(base = {}, overrides = {}) {
   });
   return result;
 }
+
+function generateId(prefix = "msg") {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  const random = Math.random().toString(16).slice(2, 10);
+  return `${prefix}-${Date.now().toString(36)}-${random}`;
+}
+
+let tagPromotionTimer = null;
 
 const DEFAULT_CONFIG = {
   tagging: {
@@ -163,6 +174,11 @@ const defaultState = () => ({
       matches: 0,
       total: 0,
     },
+    feedback: {
+      satisfied: 0,
+      unsatisfied: 0,
+      pending: 0,
+    },
   },
   streak: {
     days: 0,
@@ -200,8 +216,13 @@ if (typeof document !== "undefined") {
 
 function bootstrap() {
   ensureSystemIntro();
+  const bootPromotion = promoteSuccessfulTags();
   renderAll();
   wireEvents();
+  startPromotionJob();
+  if (bootPromotion) {
+    saveState();
+  }
 }
 
 function wireEvents() {
@@ -278,6 +299,8 @@ function wireEvents() {
     link.click();
     URL.revokeObjectURL(link.href);
   });
+
+  ui.feed.addEventListener("click", handleFeedbackClick);
 }
 
 function ensureSystemIntro() {
@@ -367,11 +390,89 @@ function deriveSystemTags(content) {
     .map((tag) => ({ ...tag, weight: Number(tag.weight.toFixed(3)) }));
 }
 
+function normalizeFeedback(feedback, role) {
+  if (role !== "garden") {
+    if (!feedback) return feedback;
+    const status = deriveFeedbackStatus(feedback);
+    return {
+      status,
+      satisfied: status === "satisfied" ? true : status === "unsatisfied" ? false : null,
+      updatedAt: feedback.updatedAt ?? null,
+      promoted: Boolean(feedback.promoted),
+      promotedAt: feedback.promotedAt ?? null,
+    };
+  }
+
+  const status = feedback ? deriveFeedbackStatus(feedback) : "pending";
+  return {
+    status,
+    satisfied: status === "satisfied" ? true : status === "unsatisfied" ? false : null,
+    updatedAt: feedback?.updatedAt ?? null,
+    promoted: Boolean(feedback?.promoted),
+    promotedAt: feedback?.promotedAt ?? null,
+  };
+}
+
+function deriveFeedbackStatus(feedback = {}) {
+  if (feedback.status === "satisfied" || feedback.status === "unsatisfied" || feedback.status === "pending") {
+    return feedback.status;
+  }
+  if (feedback.satisfied === true) return "satisfied";
+  if (feedback.satisfied === false) return "unsatisfied";
+  return "pending";
+}
+
+function distillResponseSummary(meta = {}) {
+  const normalizedTags = normalizeTagCollection(meta.tags ?? []);
+  const topTags = normalizedTags.slice(0, 3).map((tag) => tag.term);
+  const concept = topTags.length
+    ? topTags.join(", ")
+    : meta.channel || (meta.tone && personality.channels?.[meta.tone]) || "garden-memory";
+  const seedFragment = meta.usedSeedId ? ` #${String(meta.usedSeedId).slice(0, 6)}` : "";
+  const learning =
+    meta.strategy === "seed-match"
+      ? `Seed match${seedFragment} via ${meta.tone ?? "harmonic"}`
+      : "Fallback guidance — request new seed";
+  const confidenceLabel =
+    meta.intentConfidence !== undefined && meta.intentConfidence !== null
+      ? ` (${Math.round((Number(meta.intentConfidence) || 0) * 100)}%)`
+      : "";
+  const intent = meta.intent ? `${meta.intent}${confidenceLabel}` : "unspecified";
+  return {
+    learning,
+    concept,
+    intent,
+  };
+}
+
 function addMessage(role, content, meta = {}) {
   const createdAt = new Date().toISOString();
   const normalizedTags = normalizeTagCollection(meta.tags ?? []);
-  const metaWithTags = { ...meta, tags: normalizedTags };
-  state.messages.push({ role, content, createdAt, meta: metaWithTags });
+  const feedback = normalizeFeedback(meta.feedback, role);
+  let summary = meta.summary;
+  if (role === "garden") {
+    summary = distillResponseSummary({ ...meta, tags: normalizedTags });
+  }
+  const metaWithTags = {
+    ...meta,
+    tags: normalizedTags,
+    feedback,
+    summary,
+  };
+  if (metaWithTags.feedback === undefined) {
+    delete metaWithTags.feedback;
+  }
+  if (metaWithTags.summary === undefined) {
+    delete metaWithTags.summary;
+  }
+  const message = {
+    id: meta.id ?? generateId(),
+    role,
+    content,
+    createdAt,
+    meta: metaWithTags,
+  };
+  state.messages.push(message);
   state.metrics.totalMessages = state.messages.length;
   if (role === "user") state.metrics.userMessages += 1;
   if (role === "garden") state.metrics.gardenMessages += 1;
@@ -382,6 +483,8 @@ function addMessage(role, content, meta = {}) {
   if (!state.metrics.intentCounts) state.metrics.intentCounts = {};
   if (!state.metrics.seedMatchSuccess)
     state.metrics.seedMatchSuccess = { matches: 0, total: 0 };
+  if (!state.metrics.feedback)
+    state.metrics.feedback = { satisfied: 0, unsatisfied: 0, pending: 0 };
   if (normalizedTags.length) {
     normalizedTags.forEach((tag) => {
       state.metrics.tagCounts[tag.term] = Number(
@@ -418,9 +521,7 @@ function synthesizeResponse(content, creativity) {
       tags,
       seed: match.seed,
     });
-    return {
-      text: infusePersonality(blended, tone, creativityFactor, qScore),
-      meta: {
+    const meta = {
         strategy: "seed-match",
         usedSeedId: match.seed.id,
         similarity: match.metrics.jaccard.toFixed(2),
@@ -436,7 +537,11 @@ function synthesizeResponse(content, creativity) {
         intentScores: intentProfile.probabilities,
         protocol: qScore.protocol,
         qScore,
-      },
+      };
+    meta.summary = distillResponseSummary(meta);
+    return {
+      text: infusePersonality(blended, tone, creativityFactor, qScore),
+      meta,
     };
   }
 
@@ -452,9 +557,7 @@ function synthesizeResponse(content, creativity) {
     tags,
   });
 
-  return {
-    text: infusePersonality(fallback[offset], tone, creativityFactor, qScore),
-    meta: {
+  const meta = {
       strategy: "fallback",
       tone,
       persona: personality.name,
@@ -466,7 +569,11 @@ function synthesizeResponse(content, creativity) {
       intentScores: intentProfile.probabilities,
       protocol: qScore.protocol,
       qScore,
-    },
+    };
+  meta.summary = distillResponseSummary(meta);
+  return {
+    text: infusePersonality(fallback[offset], tone, creativityFactor, qScore),
+    meta,
   };
 }
 
@@ -636,6 +743,7 @@ function renderMessages() {
     const node = template.content.cloneNode(true);
     const article = node.querySelector(".message");
     article.classList.add(message.role);
+    article.dataset.messageId = message.id || "";
 
     const avatar = node.querySelector("[data-role]");
     avatar.textContent = message.role === "garden" ? "🌱" : message.role === "system" ? "✴" : "🙂";
@@ -647,6 +755,10 @@ function renderMessages() {
 
     const footer = node.querySelector("[data-footer]");
     footer.innerHTML = buildFooter(message.meta, message.role);
+    if (message.role === "garden") {
+      const controls = buildFeedbackControls(message);
+      if (controls) footer.appendChild(controls);
+    }
 
     ui.feed.appendChild(node);
   });
@@ -682,6 +794,7 @@ function buildFooter(meta = {}, role) {
   if (meta.qScore?.total !== undefined) chips.push(`Q-Score: ${meta.qScore.total}`);
   if (meta.compositeScore !== undefined)
     chips.push(`Composite: ${Number(meta.compositeScore).toFixed(2)}`);
+  if (meta.feedback?.status) chips.push(`Feedback: ${meta.feedback.status}`);
   if (meta.similarity) {
     chips.push(`Similarity: ${meta.similarity}`);
     if (meta.strategy === "seed-match") {
@@ -710,9 +823,198 @@ function buildFooter(meta = {}, role) {
     }).join(" · ");
     hints.push(`Intent probabilities — ${intentHint}.`);
   }
+  if (meta.summary) {
+    hints.push(
+      `Learning triad — learning: ${meta.summary.learning}; concept: ${meta.summary.concept}; intent: ${meta.summary.intent}.`
+    );
+  }
+  if (meta.feedback?.status === "satisfied" && meta.feedback?.promoted) {
+    hints.push("Successful tags promoted to seed metadata.");
+  }
+  if (meta.feedback?.status === "unsatisfied") {
+    hints.push("Caretaker marked this reply for follow-up refinement.");
+  }
   const chipMarkup = chips.map((chip) => `<span class="message__chip">${chip}</span>`).join(" ");
   const hintMarkup = hints.map((hint) => `<span class="message__hint">${hint}</span>`).join(" ");
   return [chipMarkup, hintMarkup].filter(Boolean).join(" ");
+}
+
+function buildFeedbackControls(message) {
+  if (!message?.id) return null;
+  const feedback = normalizeFeedback(message.meta?.feedback, "garden");
+  const wrapper = document.createElement("div");
+  wrapper.className = "feedback-toggle";
+
+  const label = document.createElement("span");
+  label.className = "feedback-toggle__label";
+  label.textContent = "Caretaker feedback";
+  wrapper.appendChild(label);
+
+  const satisfiedBtn = document.createElement("button");
+  satisfiedBtn.type = "button";
+  satisfiedBtn.className = "feedback-toggle__btn";
+  satisfiedBtn.dataset.feedbackTarget = message.id;
+  satisfiedBtn.dataset.feedbackValue = "satisfied";
+  satisfiedBtn.textContent = "Satisfied";
+  if (feedback.status === "satisfied") {
+    satisfiedBtn.classList.add("is-active");
+  }
+  wrapper.appendChild(satisfiedBtn);
+
+  const refineBtn = document.createElement("button");
+  refineBtn.type = "button";
+  refineBtn.className = "feedback-toggle__btn";
+  refineBtn.dataset.feedbackTarget = message.id;
+  refineBtn.dataset.feedbackValue = "unsatisfied";
+  refineBtn.textContent = "Needs refinement";
+  if (feedback.status === "unsatisfied") {
+    refineBtn.classList.add("is-active");
+  }
+  wrapper.appendChild(refineBtn);
+
+  const status = document.createElement("span");
+  status.className = "feedback-toggle__status";
+  if (feedback.status === "satisfied") {
+    status.textContent = "Marked satisfied";
+  } else if (feedback.status === "unsatisfied") {
+    status.textContent = "Marked for refinement";
+  } else {
+    status.textContent = "Awaiting review";
+  }
+  wrapper.appendChild(status);
+
+  return wrapper;
+}
+
+function handleFeedbackClick(event) {
+  const button = event.target.closest(".feedback-toggle__btn");
+  if (!button || !ui.feed.contains(button)) return;
+  const messageId = button.dataset.feedbackTarget;
+  const value = button.dataset.feedbackValue;
+  if (!messageId || !value) return;
+  event.preventDefault();
+  recordFeedback(messageId, value === "satisfied" ? "satisfied" : "unsatisfied");
+}
+
+function recordFeedback(messageId, targetStatus) {
+  const message = state.messages.find((entry) => entry.id === messageId);
+  if (!message || message.role !== "garden") return;
+  const currentStatus = message.meta?.feedback?.status ?? "pending";
+  const nextStatus = currentStatus === targetStatus ? "pending" : targetStatus;
+  const feedback = normalizeFeedback(message.meta?.feedback, "garden");
+  feedback.status = nextStatus;
+  feedback.satisfied = nextStatus === "satisfied" ? true : nextStatus === "unsatisfied" ? false : null;
+  feedback.updatedAt = new Date().toISOString();
+  if (nextStatus !== "satisfied") {
+    feedback.promoted = false;
+    feedback.promotedAt = null;
+  }
+  message.meta = {
+    ...message.meta,
+    feedback,
+  };
+
+  const promoted = nextStatus === "satisfied" ? promoteSuccessfulTags() : false;
+  if (promoted) {
+    message.meta.feedback = normalizeFeedback(message.meta.feedback, "garden");
+  }
+  refreshMetrics();
+  renderAll();
+  saveState();
+}
+
+function startPromotionJob() {
+  if (typeof window === "undefined") return;
+  if (tagPromotionTimer) {
+    window.clearInterval(tagPromotionTimer);
+  }
+  tagPromotionTimer = window.setInterval(() => {
+    const updated = promoteSuccessfulTags();
+    if (updated) {
+      refreshMetrics();
+      renderAll();
+      saveState();
+    }
+  }, TAG_PROMOTION_INTERVAL);
+}
+
+function promoteSuccessfulTags() {
+  let updated = false;
+  state.messages.forEach((message) => {
+    if (message.role !== "garden") return;
+    const hadFeedback = Boolean(message.meta?.feedback);
+    const feedback = normalizeFeedback(message.meta?.feedback, "garden");
+    const isDefaultPending =
+      !hadFeedback && feedback.status === "pending" && !feedback.updatedAt && !feedback.promoted;
+    if (!feedback || feedback.status !== "satisfied" || feedback.promoted) {
+      if (isDefaultPending || message.meta?.feedback !== feedback) {
+        message.meta = {
+          ...message.meta,
+          feedback,
+        };
+        if (isDefaultPending) {
+          updated = true;
+        }
+      }
+      return;
+    }
+
+    const tags = normalizeTagCollection(message.meta?.tags ?? []);
+    const seedId = message.meta?.usedSeedId;
+    if (!seedId) {
+      feedback.promoted = true;
+      feedback.promotedAt = new Date().toISOString();
+      message.meta = { ...message.meta, feedback };
+      updated = true;
+      return;
+    }
+
+    const seed = state.seeds.find((entry) => entry.id === seedId);
+    if (!seed) {
+      feedback.promoted = true;
+      feedback.promotedAt = new Date().toISOString();
+      message.meta = { ...message.meta, feedback };
+      updated = true;
+      return;
+    }
+
+    if (!Array.isArray(seed.tags)) {
+      seed.tags = [];
+    }
+    const existingMap = new Map(seed.tags.map((tag) => [tag.term, { ...tag }]));
+    let seedChanged = false;
+
+    tags.forEach((tag) => {
+      const existing = existingMap.get(tag.term);
+      if (existing) {
+        const baseWeight = Number(existing.weight ?? 1);
+        const boost = Number(tag.weight ?? 1) * 0.1;
+        const nextWeight = Number((baseWeight + boost).toFixed(3));
+        if (nextWeight !== existing.weight) {
+          existing.weight = nextWeight;
+          seedChanged = true;
+        }
+        if (existing.kind !== "seed" && existing.kind !== "promoted") {
+          existing.kind = "promoted";
+          seedChanged = true;
+        }
+      } else {
+        existingMap.set(tag.term, { ...tag, kind: "promoted" });
+        seedChanged = true;
+      }
+    });
+
+    if (seedChanged) {
+      seed.tags = normalizeTagCollection(Array.from(existingMap.values()));
+    }
+
+    feedback.promoted = true;
+    feedback.promotedAt = new Date().toISOString();
+    message.meta = { ...message.meta, feedback };
+    updated = true;
+  });
+
+  return updated;
 }
 
 function formatTagForDisplay(tag) {
@@ -824,6 +1126,12 @@ function renderMetrics() {
       compositeNode.textContent = "—";
     }
   }
+
+  const feedbackNode = ensureMetricSlot("feedback-summary", "Caretaker feedback");
+  if (feedbackNode) {
+    const feedbackStats = state.metrics.feedback ?? { satisfied: 0, unsatisfied: 0, pending: 0 };
+    feedbackNode.textContent = `${feedbackStats.satisfied} satisfied · ${feedbackStats.unsatisfied} needs refinement · ${feedbackStats.pending} pending`;
+  }
 }
 
 function ensureMetricSlot(stat, label) {
@@ -933,6 +1241,7 @@ function refreshMetrics() {
   state.metrics.intentCounts = {};
   let seedMatchTotal = 0;
   let seedMatchWins = 0;
+  const feedbackCounts = { satisfied: 0, unsatisfied: 0, pending: 0 };
   state.messages.forEach((message) => {
     const tags = normalizeTagCollection(message.meta?.tags ?? []);
     tags.forEach((tag) => {
@@ -949,12 +1258,21 @@ function refreshMetrics() {
       if (message.meta?.strategy === "seed-match") {
         seedMatchWins += 1;
       }
+      const status = message.meta?.feedback?.status ?? "pending";
+      if (status === "satisfied") {
+        feedbackCounts.satisfied += 1;
+      } else if (status === "unsatisfied") {
+        feedbackCounts.unsatisfied += 1;
+      } else {
+        feedbackCounts.pending += 1;
+      }
     }
   });
   state.metrics.seedMatchSuccess = {
     matches: seedMatchWins,
     total: seedMatchTotal,
   };
+  state.metrics.feedback = feedbackCounts;
 }
 
 function refreshStreak() {
@@ -1002,10 +1320,21 @@ function loadState() {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed.messages)) {
       parsed.messages = parsed.messages.map((message) => {
-        if (message.meta?.tags) {
-          message.meta.tags = normalizeTagCollection(message.meta.tags);
+        const meta = message.meta ? { ...message.meta } : {};
+        if (meta.tags) {
+          meta.tags = normalizeTagCollection(meta.tags);
         }
-        return message;
+        if (message.role === "garden") {
+          meta.feedback = normalizeFeedback(meta.feedback, "garden");
+          if (!meta.summary) {
+            meta.summary = distillResponseSummary(meta);
+          }
+        }
+        return {
+          ...message,
+          id: message.id ?? generateId(),
+          meta,
+        };
       });
     }
     if (Array.isArray(parsed.seeds)) {
@@ -1040,6 +1369,10 @@ function loadState() {
         seedMatchSuccess: {
           ...base.metrics.seedMatchSuccess,
           ...(parsed.metrics?.seedMatchSuccess ?? {}),
+        },
+        feedback: {
+          ...base.metrics.feedback,
+          ...(parsed.metrics?.feedback ?? {}),
         },
       },
       streak: { ...base.streak, ...parsed.streak },
