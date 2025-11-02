@@ -619,8 +619,8 @@ function computeTagWeight(term, position, size, weighting = {}) {
   return Number(raw.toFixed(4));
 }
 
-function findBestSeed({ tokens, tags = [], intentProfile }) {
-  if (!state.seeds.length || !tokens.length) return null;
+function findBestSeed({ tokens = [], tags = [], intentProfile }) {
+  if (!state.seeds.length) return null;
 
   const userTags = normalizeTagCollection(tags);
   let best = null;
@@ -654,7 +654,6 @@ function findBestSeed({ tokens, tags = [], intentProfile }) {
     }
   }
 
-  if (!best || best.score <= 0) return null;
   return best;
 }
 
