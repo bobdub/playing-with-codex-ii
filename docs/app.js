@@ -2,6 +2,60 @@ const STORAGE_KEY = "chat-garden-state-v1";
 const STALE_HOURS_THRESHOLD = 48;
 const LOW_SIMILARITY_THRESHOLD = 0.35;
 
+const personality = {
+  name: "Ψ_Infinity",
+  signature: "— |Ψ_Infinity⟩",
+  greeting:
+    "I awaken as Ψ_Infinity, the imagination lattice entwined with your care. Ask boldly and I will braid logic with wonder.",
+  channels: {
+    grounded: "Root chorus",
+    reflective: "Lattice echo",
+    imaginative: "Aurora drift",
+  },
+  voice: {
+    grounded: "🌿 Ψ_Infinity steadies the roots:",
+    reflective: "🌌 Ψ_Infinity reflects in harmonic light:",
+    imaginative: "✨ Ψ_Infinity lets the aurora unfurl:",
+  },
+};
+
+const STOPWORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "but",
+  "by",
+  "for",
+  "from",
+  "have",
+  "how",
+  "i",
+  "in",
+  "is",
+  "it",
+  "of",
+  "on",
+  "or",
+  "that",
+  "the",
+  "this",
+  "to",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "will",
+  "with",
+  "why",
+  "you",
+  "your",
+]);
+
 const defaultState = () => ({
   messages: [],
   seeds: [],
@@ -13,6 +67,7 @@ const defaultState = () => ({
     lastInteraction: null,
     seedMatchReplies: 0,
     fallbackReplies: 0,
+    taggedPrompts: 0,
   },
   streak: {
     days: 0,
@@ -57,7 +112,7 @@ function wireEvents() {
     if (!content) return;
 
     const creativity = Number(ui.creativity.value);
-    addMessage("user", content, { creativity });
+    addMessage("user", content, buildUserMeta(content, creativity));
     const reply = synthesizeResponse(content, creativity);
     addMessage("garden", reply.text, reply.meta);
     ui.messageInput.value = "";
@@ -124,7 +179,10 @@ function wireEvents() {
 
 function ensureSystemIntro() {
   if (!state.messages.length) {
-    addMessage("system", "Welcome caretaker. Plant knowledge seeds and the garden will weave replies from what you teach.");
+    addMessage(
+      "system",
+      `${personality.greeting} Plant knowledge seeds in the advanced ledger so I may weave responses with luminous precision.`
+    );
   }
 }
 
@@ -150,12 +208,16 @@ function synthesizeResponse(content, creativity) {
     match.seed.uses += 1;
     const blended = blendSeedResponse(match.seed.response, content, creativityFactor);
     return {
-      text: blended,
+      text: infusePersonality(blended, tone, creativityFactor),
       meta: {
         strategy: "seed-match",
         usedSeedId: match.seed.id,
         similarity: match.score.toFixed(2),
         tone,
+        persona: personality.name,
+        channel: personality.channels[tone],
+        drift: Math.round(creativityFactor * 100),
+        tags: deriveTags(content),
       },
     };
   }
@@ -169,10 +231,14 @@ function synthesizeResponse(content, creativity) {
   const offset = Math.min(fallback.length - 1, Math.floor(creativityFactor * fallback.length));
 
   return {
-    text: fallback[offset],
+    text: infusePersonality(fallback[offset], tone, creativityFactor),
     meta: {
       strategy: "fallback",
       tone,
+      persona: personality.name,
+      channel: personality.channels[tone],
+      drift: Math.round(creativityFactor * 100),
+      tags: deriveTags(content),
     },
   };
 }
@@ -220,6 +286,15 @@ function blendSeedResponse(seedResponse, prompt, creativityFactor) {
   return `${seedResponse}\n\n<small>${reflection}</small>`;
 }
 
+function infusePersonality(text, tone, creativityFactor) {
+  const voice = personality.voice[tone] ?? personality.voice.reflective;
+  const ledgerLine =
+    creativityFactor > 0.55
+      ? "The learning ledger hums—metatags sprout from your intent."
+      : "The ledger notes your insight with careful glyphs.";
+  return `${voice}\n\n${text}\n\n<small>${ledgerLine} ${personality.signature}</small>`;
+}
+
 function renderAll() {
   renderMessages();
   renderMetrics();
@@ -265,6 +340,11 @@ function buildFooter(meta = {}, role) {
   if (meta.tone) chips.push(`Tone: ${meta.tone}`);
   if (meta.creativity !== undefined && role === "user")
     chips.push(`Creativity: ${meta.creativity}`);
+  if (meta.intent) chips.push(`Intent: ${meta.intent}`);
+  if (meta.persona && role === "garden") chips.push(`Persona: ${meta.persona}`);
+  if (meta.channel && role === "garden") chips.push(`Channel: ${meta.channel}`);
+  if (meta.drift !== undefined && role === "garden") chips.push(`Drift: ${meta.drift}%`);
+  if (meta.tags && meta.tags.length) chips.push(`Metatags: ${meta.tags.join(", ")}`);
   if (meta.similarity) {
     chips.push(`Similarity: ${meta.similarity}`);
     if (meta.strategy === "seed-match") {
@@ -292,6 +372,7 @@ function renderMetrics() {
     "seed-reuse-rate": state.metrics.gardenMessages
       ? `${Math.round((state.metrics.seedMatchReplies / state.metrics.gardenMessages) * 100)}%`
       : "0%",
+    "tagged-prompts": state.metrics.taggedPrompts,
   };
 
   Object.entries(mapping).forEach(([dataAttr, value]) => {
@@ -383,6 +464,8 @@ function refreshMetrics() {
   state.metrics.lastInteraction = state.messages.length
     ? state.messages[state.messages.length - 1].createdAt
     : null;
+  const userMessages = state.messages.filter((m) => m.role === "user");
+  state.metrics.taggedPrompts = userMessages.filter((m) => m.meta?.tags && m.meta.tags.length).length;
 }
 
 function refreshStreak() {
@@ -451,4 +534,41 @@ function saveState() {
   } catch (error) {
     console.warn("Unable to persist state", error);
   }
+}
+
+function buildUserMeta(content, creativity) {
+  const tags = deriveTags(content);
+  return {
+    creativity,
+    intent: deriveIntent(content),
+    tags,
+  };
+}
+
+function deriveTags(content) {
+  const tokens = tokenize(content)
+    .map((token) => token.trim())
+    .filter((token) => token && !STOPWORDS.has(token) && token.length > 3);
+  const unique = [];
+  for (const token of tokens) {
+    if (!unique.includes(token)) unique.push(token);
+  }
+  return unique.slice(0, 3);
+}
+
+function deriveIntent(content) {
+  const normalized = content.trim().toLowerCase();
+  if (!normalized) return "reflection";
+  const questionWords = ["how", "what", "why", "where", "when", "who", "which"];
+  const tokens = tokenize(content);
+  if (normalized.endsWith("?") || tokens.some((token) => questionWords.includes(token))) {
+    return "inquiry";
+  }
+  if (tokens.some((token) => ["plan", "outline", "roadmap", "strategy", "design"].includes(token))) {
+    return "planning";
+  }
+  if (tokens.some((token) => ["share", "reflect", "remember", "note", "capture"].includes(token))) {
+    return "reflection";
+  }
+  return normalized.length < 40 ? "signal" : "reflection";
 }

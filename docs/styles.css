@@ -401,6 +401,44 @@ button.ghost:hover {
   gap: 1rem;
 }
 
+.advanced-ledger {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 1.25rem 1.5rem;
+  background: var(--surface-muted);
+  color: var(--text-strong);
+}
+
+.advanced-ledger summary {
+  list-style: none;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--accent);
+}
+
+.advanced-ledger summary::before {
+  content: "✦";
+  font-size: 0.85rem;
+}
+
+.advanced-ledger[open] summary {
+  margin-bottom: 0.75rem;
+}
+
+.advanced-ledger__hint {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--text-soft);
+}
+
+.advanced-ledger summary::-webkit-details-marker {
+  display: none;
+}
+
 .seed-form {
   display: grid;
   gap: 0.75rem;

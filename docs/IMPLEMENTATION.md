@@ -18,7 +18,7 @@ Application state is kept in a single object created by `defaultState()` and loa
 
 - `messages`: ordered chat history with role, content, timestamps, and optional metadata.
 - `seeds`: prompt/response pairs with tags, creation time, and usage counts.
-- `metrics`: derived counters (total messages, user vs. garden contributions, seed usage, last interaction).
+- `metrics`: derived counters (total messages, user vs. garden contributions, seed usage, last interaction, tagged prompts).
 - `streak`: tracks how many consecutive days the garden was tended.
 
 State is rehydrated from `localStorage` under the key `chat-garden-state-v1`. When values are missing or malformed, `loadState()` merges them with defaults to stay resilient. `saveState()` writes the authoritative snapshot back to storage after each interaction.
@@ -40,7 +40,7 @@ Submitting the composer form triggers:
 1. Validation that the message is non-empty.
 2. `addMessage("user", …)` to append the caretaker message, update metrics, and refresh the tending streak.
 3. `synthesizeResponse()` to generate a garden reply. The function tokenizes the caretaker prompt, looks for the best matching knowledge seed via Jaccard similarity, and chooses an appropriate tone based on the "creative drift" slider.
-4. `addMessage("garden", …)` with metadata describing the chosen strategy (`seed-match` or `fallback`), tone, similarity score, and seed reference.
+4. `addMessage("garden", …)` with metadata describing the chosen strategy (`seed-match` or `fallback`), tone, similarity score, persona channel, derived metatags, and seed reference.
 5. `renderAll()` and `saveState()` to refresh the interface and persist the new history.
 
 If no seeds overlap, the fallback messages encourage caretakers to plant more knowledge before continuing.
@@ -64,7 +64,7 @@ Only the six most recent seeds are displayed in the sidebar to keep the UI focus
 
 `renderAll()` orchestrates view updates by delegating to:
 
-- `renderMessages()` – clones a `<template>` fragment for each message, sanitizes content via `DOMParser`, decorates footers with metadata chips, and auto-scrolls to the latest entry.
+- `renderMessages()` – clones a `<template>` fragment for each message, sanitizes content via `DOMParser`, decorates footers with metadata chips (strategy, tone, intent, persona, metatags), and auto-scrolls to the latest entry.
 - `renderMetrics()` – maps derived counters onto the telemetry definition list.
 - `renderSeeds()` – builds card-like list items with metadata, prompt, response, and tags for recently planted seeds.
 - `renderHero()` – presents global counts (seed total, streak length, last tended timestamp).
@@ -87,3 +87,18 @@ The architecture favors incremental enhancement:
 - Future persistence strategies (e.g., remote sync) can wrap or replace `loadState()` / `saveState()` while preserving the surrounding API.
 
 Use this guide as a map when iterating on the garden. Each section points to the core routines responsible for the current behavior, making it straightforward to extend the prototype with new capabilities.
+
+## Persona layer & metatagging
+
+`personality` centralizes the Ψ_Infinity voice, greeting, and channel labels. `infusePersonality()` wraps synthesized text with that voice so the assistant signs each message consistently.
+
+Incoming caretaker prompts flow through `buildUserMeta()`, which derives:
+
+- `intent` – heuristic classification (inquiry, planning, reflection, or signal).
+- `tags` – up to three metatags distilled from non-stopword tokens.
+
+These details populate message footers for both the caretaker and garden, and the `metrics.taggedPrompts` counter surfaces them on the telemetry panel.
+
+## Advanced learning ledger
+
+The learning ledger lives inside an `<details>` disclosure (`.advanced-ledger`) to signal that the controls are tuned for advanced caretakers. The wrapper reinforces that the ledger is preserved for experts while keeping the underlying form and metadata capture unchanged.
