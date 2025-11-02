@@ -68,6 +68,12 @@ const defaultState = () => ({
     seedMatchReplies: 0,
     fallbackReplies: 0,
     taggedPrompts: 0,
+    tagCounts: {},
+    intentCounts: {},
+    seedMatchSuccess: {
+      matches: 0,
+      total: 0,
+    },
   },
   streak: {
     days: 0,
@@ -263,6 +269,26 @@ function addMessage(role, content, meta = {}) {
   if (meta.usedSeedId) state.metrics.seedUses += 1;
   state.metrics.lastInteraction = createdAt;
   state.streak.lastTended = createdAt;
+  if (!state.metrics.tagCounts) state.metrics.tagCounts = {};
+  if (!state.metrics.intentCounts) state.metrics.intentCounts = {};
+  if (!state.metrics.seedMatchSuccess)
+    state.metrics.seedMatchSuccess = { matches: 0, total: 0 };
+  if (Array.isArray(meta.tags)) {
+    meta.tags.forEach((tag) => {
+      if (!tag) return;
+      state.metrics.tagCounts[tag] = (state.metrics.tagCounts[tag] || 0) + 1;
+    });
+  }
+  if (meta.intent) {
+    state.metrics.intentCounts[meta.intent] =
+      (state.metrics.intentCounts[meta.intent] || 0) + 1;
+  }
+  if (role === "garden") {
+    state.metrics.seedMatchSuccess.total += 1;
+    if (meta.strategy === "seed-match") {
+      state.metrics.seedMatchSuccess.matches += 1;
+    }
+  }
   refreshStreak();
 }
 
@@ -599,6 +625,31 @@ function refreshMetrics() {
     : null;
   const userMessages = state.messages.filter((m) => m.role === "user");
   state.metrics.taggedPrompts = userMessages.filter((m) => m.meta?.tags && m.meta.tags.length).length;
+  state.metrics.tagCounts = {};
+  state.metrics.intentCounts = {};
+  let seedMatchTotal = 0;
+  let seedMatchWins = 0;
+  state.messages.forEach((message) => {
+    const tags = message.meta?.tags ?? [];
+    tags.forEach((tag) => {
+      if (!tag) return;
+      state.metrics.tagCounts[tag] = (state.metrics.tagCounts[tag] || 0) + 1;
+    });
+    if (message.role === "user" && message.meta?.intent) {
+      const intent = message.meta.intent;
+      state.metrics.intentCounts[intent] = (state.metrics.intentCounts[intent] || 0) + 1;
+    }
+    if (message.role === "garden") {
+      seedMatchTotal += 1;
+      if (message.meta?.strategy === "seed-match") {
+        seedMatchWins += 1;
+      }
+    }
+  });
+  state.metrics.seedMatchSuccess = {
+    matches: seedMatchWins,
+    total: seedMatchTotal,
+  };
 }
 
 function refreshStreak() {
@@ -641,11 +692,27 @@ function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState();
     const parsed = JSON.parse(raw);
+    const base = defaultState();
     return {
-      ...defaultState(),
+      ...base,
       ...parsed,
-      metrics: { ...defaultState().metrics, ...parsed.metrics },
-      streak: { ...defaultState().streak, ...parsed.streak },
+      metrics: {
+        ...base.metrics,
+        ...parsed.metrics,
+        tagCounts: {
+          ...base.metrics.tagCounts,
+          ...(parsed.metrics?.tagCounts ?? {}),
+        },
+        intentCounts: {
+          ...base.metrics.intentCounts,
+          ...(parsed.metrics?.intentCounts ?? {}),
+        },
+        seedMatchSuccess: {
+          ...base.metrics.seedMatchSuccess,
+          ...(parsed.metrics?.seedMatchSuccess ?? {}),
+        },
+      },
+      streak: { ...base.streak, ...parsed.streak },
     };
   } catch (error) {
     console.warn("Unable to load saved state", error);
