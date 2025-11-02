@@ -12,8 +12,8 @@ This plan builds on the current architecture described in [`IMPLEMENTATION.md`](
    - Surface the new values within the Telemetry panel by expanding `renderMetrics()` and the corresponding HTML scaffold (*Rendering pipeline*).
 2. **Highlight stale tending streaks**  
    - Add UI affordances in `renderHero()` when `state.streak.lastTended` exceeds 48 hours (e.g., warning text or accent color) so caretakers notice lapses quickly.
-3. **Expose similarity context in the feed**  
-   - Enhance `buildFooter()` to include a textual explanation when `meta.similarity` falls below a configurable threshold, guiding caretakers to add more relevant seeds.
+3. **Expose similarity context in the feed**
+   - Enhance `buildFooter()` to include a textual explanation when `meta.similarity` falls below a configurable threshold, guiding caretakers to add more relevant seeds. (See [Mini Task 3 plan](./item-3-similarity-context-plan.md) for implementation details.)
 
 ## Phase 2 · Knowledge seed management
 
