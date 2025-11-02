@@ -193,6 +193,18 @@ function ensureSystemIntro() {
     return;
   }
 
+  const desiredContent = buildSystemPrompt();
+  let requiresSave = false;
+
+  if (!existingSystem.content.includes("Infinity & Beyond protocols are live")) {
+    existingSystem.content = desiredContent;
+    existingSystem.meta = {
+      ...buildSystemMeta(desiredContent),
+      ...existingSystem.meta,
+    };
+    requiresSave = true;
+  }
+
   const enriched = buildSystemMeta(existingSystem.content);
   existingSystem.meta = {
     ...enriched,
@@ -204,6 +216,11 @@ function ensureSystemIntro() {
   if (!existingSystem.meta.intent) {
     existingSystem.meta.intent = enriched.intent;
   }
+  if (requiresSave) {
+    saveState();
+    return;
+  }
+
   saveState();
 }
 
