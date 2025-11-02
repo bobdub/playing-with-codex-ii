@@ -136,6 +136,30 @@ body::before {
   font-weight: 600;
 }
 
+.status-card--warning {
+  background: rgba(234, 179, 8, 0.1);
+  border-color: rgba(234, 179, 8, 0.55);
+  box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.45) inset;
+}
+
+.status-card--warning .status-card__value {
+  color: #f59e0b;
+}
+
+.status-card__note {
+  font-size: 0.8rem;
+  color: #b45309;
+  line-height: 1.4;
+}
+
+.status-card__note[hidden] {
+  display: none;
+}
+
+.status-card__note:not([hidden]) {
+  display: block;
+}
+
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1.8fr) minmax(320px, 1fr);
@@ -270,10 +294,15 @@ body::before {
   gap: 0.5rem;
 }
 
-.message__footer span {
+.message__chip {
   background: rgba(15, 23, 42, 0.08);
   padding: 0.25rem 0.5rem;
   border-radius: 999px;
+}
+
+.message__hint {
+  color: var(--secondary);
+  font-weight: 500;
 }
 
 .composer {

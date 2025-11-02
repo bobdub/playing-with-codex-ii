@@ -1,4 +1,6 @@
 const STORAGE_KEY = "chat-garden-state-v1";
+const STALE_HOURS_THRESHOLD = 48;
+const LOW_SIMILARITY_THRESHOLD = 0.35;
 
 const defaultState = () => ({
   messages: [],
@@ -36,6 +38,8 @@ const ui = {
   heroSeeds: document.getElementById("seed-count"),
   heroStreak: document.getElementById("streak-count"),
   heroLastTended: document.getElementById("last-tended"),
+  lastTendedCard: document.getElementById("last-tended-card"),
+  streakAlert: document.getElementById("streak-alert"),
 };
 
 bootstrap();
@@ -256,12 +260,23 @@ function sanitize(value) {
 function buildFooter(meta = {}, role) {
   if (!meta) return "";
   const chips = [];
+  const hints = [];
   if (meta.strategy) chips.push(`Strategy: ${meta.strategy}`);
   if (meta.tone) chips.push(`Tone: ${meta.tone}`);
   if (meta.creativity !== undefined && role === "user")
     chips.push(`Creativity: ${meta.creativity}`);
-  if (meta.similarity) chips.push(`Similarity: ${meta.similarity}`);
-  return chips.map((chip) => `<span>${chip}</span>`).join(" ");
+  if (meta.similarity) {
+    chips.push(`Similarity: ${meta.similarity}`);
+    if (meta.strategy === "seed-match") {
+      const similarityValue = Number.parseFloat(meta.similarity);
+      if (!Number.isNaN(similarityValue) && similarityValue < LOW_SIMILARITY_THRESHOLD) {
+        hints.push("Low similarity — consider planting more focused seeds.");
+      }
+    }
+  }
+  const chipMarkup = chips.map((chip) => `<span class="message__chip">${chip}</span>`).join(" ");
+  const hintMarkup = hints.map((hint) => `<span class="message__hint">${hint}</span>`).join(" ");
+  return [chipMarkup, hintMarkup].filter(Boolean).join(" ");
 }
 
 function renderMetrics() {
@@ -335,6 +350,26 @@ function renderHero() {
     ? formatAbsoluteTime(state.streak.lastTended)
     : "—";
   ui.heroStreak.textContent = `${state.streak.days} day${state.streak.days === 1 ? "" : "s"}`;
+  const stale = isStreakStale();
+  if (ui.lastTendedCard) {
+    ui.lastTendedCard.classList.toggle("status-card--warning", stale);
+  }
+  if (ui.streakAlert) {
+    if (stale) {
+      ui.streakAlert.textContent = "Tending overdue — visit the garden soon.";
+      ui.streakAlert.hidden = false;
+    } else {
+      ui.streakAlert.hidden = true;
+      ui.streakAlert.textContent = "";
+    }
+  }
+}
+
+function isStreakStale() {
+  if (!state.streak.lastTended) return false;
+  const last = new Date(state.streak.lastTended);
+  const diffHours = (Date.now() - last.getTime()) / (1000 * 60 * 60);
+  return diffHours >= STALE_HOURS_THRESHOLD;
 }
 
 function refreshMetrics() {
