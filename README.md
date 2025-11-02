@@ -1,6 +1,7 @@
 # Chat Garden LLM
 
 Kickstarting a local-first learning playground that runs entirely in the browser.
+[Live Site](https://bobdub.github.io/playing-with-codex-ii/)
 
 ## Getting started
 
