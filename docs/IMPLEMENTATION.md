@@ -40,7 +40,7 @@ Submitting the composer form triggers:
 1. Validation that the message is non-empty.
 2. `addMessage("user", …)` to append the caretaker message, update metrics, and refresh the tending streak.
 3. `synthesizeResponse()` to generate a garden reply. The function tokenizes the caretaker prompt, looks for the best matching knowledge seed via Jaccard similarity, and chooses an appropriate tone based on the "creative drift" slider.
-4. `addMessage("garden", …)` with metadata describing the chosen strategy (`seed-match` or `fallback`), tone, similarity score, persona channel, derived metatags, and seed reference.
+4. `addMessage("garden", …)` with metadata describing the chosen strategy (`seed-match` or `fallback`), tone, similarity score, persona channel, derived metatags, seed reference, and a distilled learning triad (`meta.summary`) that captures `{learning, concept, intent}` for the reply.
 5. `renderAll()` and `saveState()` to refresh the interface and persist the new history.
 
 If no seeds overlap, the fallback messages encourage caretakers to plant more knowledge before continuing.
@@ -61,6 +61,16 @@ The seed form collects a prompt, response, and optional comma-delimited tags. Wh
 4. Calls `refreshMetrics()`, `renderAll()`, and `saveState()` to propagate changes.
 
 Only the six most recent seeds are displayed in the sidebar to keep the UI focused, while usage counters surface which seeds are influencing replies.
+
+## Learning triad summarizer
+
+`synthesizeResponse()` funnels its metadata through `distillResponseSummary()`, which condenses the reply context into a `{learning, concept, intent}` triad stored on `meta.summary`. `addMessage()` recomputes the summary as it writes the garden message, and `loadState()` backfills older transcripts so historical replies also carry the triad. Message footers surface the values as contextual hints, helping caretakers see at a glance which seed was reinforced, which concepts were invoked, and which intent classification guided the response.
+
+## Caretaker feedback loop and tag promotion
+
+Every garden reply renders feedback toggles created by `buildFeedbackControls()`. `handleFeedbackClick()` delegates clicks from the feed, and `recordFeedback()` persists the caretaker decision to `message.meta.feedback`, capturing status, timestamps, and promotion markers. `refreshMetrics()` rolls these statuses into `metrics.feedback`, while `renderMetrics()` exposes an aggregated “Caretaker feedback” stat so stewards can monitor satisfied, pending, and needs-refinement replies.
+
+Satisfied feedback triggers `promoteSuccessfulTags()`, which raises tag weights or appends promoted tags back onto the originating seed before marking the reply as processed. The function also runs on a one-minute cadence via `startPromotionJob()` (`TAG_PROMOTION_INTERVAL`), ensuring deferred reviews still enrich the ledger. When toggles flip back to “needs refinement,” promotion flags reset so the next satisfied review can re-run the pipeline. Caretakers can watch the telemetry metric and individual message chips to decide which seeds to curate—e.g., reinforce tags that were promoted or revisit seeds attached to repeated refinement marks.
 
 ## Metrics and streak calculations
 

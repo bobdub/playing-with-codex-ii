@@ -294,6 +294,49 @@ body::before {
   gap: 0.5rem;
 }
 
+.feedback-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+.feedback-toggle__label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.feedback-toggle__btn {
+  border: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.05);
+  border-radius: 999px;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.7rem;
+  color: var(--text-soft);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.feedback-toggle__btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.feedback-toggle__btn.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.feedback-toggle__status {
+  font-size: 0.7rem;
+  color: var(--text-soft);
+}
+
 .message__chip {
   background: rgba(15, 23, 42, 0.08);
   padding: 0.25rem 0.5rem;
