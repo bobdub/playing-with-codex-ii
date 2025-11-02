@@ -18,3 +18,7 @@ designed for GitHub Pages, so the `docs/` directory can be published directly.
 ## Development notes
 
 This kickoff focuses on a rich static prototype using vanilla HTML, CSS, and JavaScript. No build tooling is required—editing the files in `docs/` and refreshing the browser is enough. Future iterations can evolve the synthesis engine, visual language, or integrate with backend services once needed.
+
+## Implementation guide
+
+Looking for the full tour of how the prototype is assembled? Check out [`docs/IMPLEMENTATION.md`](docs/IMPLEMENTATION.md) for a breakdown of the state model, rendering pipeline, event flow, and extensibility considerations.
