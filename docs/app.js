@@ -91,7 +91,11 @@ const DEFAULT_CONFIG = {
   },
 };
 
-const gardenConfig = mergeDeep(DEFAULT_CONFIG, window.__GARDEN_CONFIG || {});
+const runtimeConfig =
+  typeof window !== "undefined" && window.__GARDEN_CONFIG
+    ? window.__GARDEN_CONFIG
+    : {};
+const gardenConfig = mergeDeep(DEFAULT_CONFIG, runtimeConfig);
 
 function createTag(term, { weight = 1, kind = "keyword" } = {}) {
   if (!term) return null;
@@ -139,6 +143,8 @@ function extractTagTerms(collection) {
   return normalizeTagCollection(collection).map((tag) => tag.term);
 }
 
+const INTENT_CLASSES = ["inquiry", "planning", "reflection", "signal"];
+
 const defaultState = () => ({
   messages: [],
   seeds: [],
@@ -166,27 +172,31 @@ const defaultState = () => ({
 
 const state = loadState();
 
-const ui = {
-  feed: document.getElementById("message-feed"),
-  composer: document.getElementById("composer"),
-  messageInput: document.getElementById("message-input"),
-  creativity: document.getElementById("creativity"),
-  clearBtn: document.getElementById("clear-convo"),
-  exportBtn: document.getElementById("export-data"),
-  seedForm: document.getElementById("seed-form"),
-  seedPrompt: document.getElementById("seed-prompt"),
-  seedResponse: document.getElementById("seed-response"),
-  seedTags: document.getElementById("seed-tags"),
-  seedList: document.getElementById("seed-list"),
-  metrics: document.getElementById("metrics"),
-  heroSeeds: document.getElementById("seed-count"),
-  heroStreak: document.getElementById("streak-count"),
-  heroLastTended: document.getElementById("last-tended"),
-  lastTendedCard: document.getElementById("last-tended-card"),
-  streakAlert: document.getElementById("streak-alert"),
-};
+const ui = typeof document !== "undefined"
+  ? {
+      feed: document.getElementById("message-feed"),
+      composer: document.getElementById("composer"),
+      messageInput: document.getElementById("message-input"),
+      creativity: document.getElementById("creativity"),
+      clearBtn: document.getElementById("clear-convo"),
+      exportBtn: document.getElementById("export-data"),
+      seedForm: document.getElementById("seed-form"),
+      seedPrompt: document.getElementById("seed-prompt"),
+      seedResponse: document.getElementById("seed-response"),
+      seedTags: document.getElementById("seed-tags"),
+      seedList: document.getElementById("seed-list"),
+      metrics: document.getElementById("metrics"),
+      heroSeeds: document.getElementById("seed-count"),
+      heroStreak: document.getElementById("streak-count"),
+      heroLastTended: document.getElementById("last-tended"),
+      lastTendedCard: document.getElementById("last-tended-card"),
+      streakAlert: document.getElementById("streak-alert"),
+    }
+  : {};
 
-bootstrap();
+if (typeof document !== "undefined") {
+  bootstrap();
+}
 
 function bootstrap() {
   ensureSystemIntro();
@@ -231,6 +241,7 @@ function wireEvents() {
       tags,
       createdAt: new Date().toISOString(),
       uses: 0,
+      intentProfile: scoreIntentProbabilities(`${prompt} ${response}`, tags),
     };
 
     state.seeds.unshift(seed);
@@ -394,7 +405,8 @@ function addMessage(role, content, meta = {}) {
 function synthesizeResponse(content, creativity) {
   const tokens = tokenize(content);
   const tags = deriveTags(content);
-  const match = findBestSeed(tokens);
+  const intentProfile = scoreIntentProbabilities(content, tags);
+  const match = findBestSeed({ tokens, tags, intentProfile });
   const creativityFactor = creativity / 100;
   const tone = creativityFactor > 0.6 ? "imaginative" : creativityFactor > 0.3 ? "reflective" : "grounded";
 
@@ -411,12 +423,17 @@ function synthesizeResponse(content, creativity) {
       meta: {
         strategy: "seed-match",
         usedSeedId: match.seed.id,
-        similarity: match.score.toFixed(2),
+        similarity: match.metrics.jaccard.toFixed(2),
+        compositeScore: match.score.toFixed(2),
+        similarityBreakdown: match.metrics,
         tone,
         persona: personality.name,
         channel: personality.channels[tone],
         drift: Math.round(creativityFactor * 100),
         tags,
+        intent: intentProfile.intent,
+        intentConfidence: intentProfile.confidence,
+        intentScores: intentProfile.probabilities,
         protocol: qScore.protocol,
         qScore,
       },
@@ -444,6 +461,9 @@ function synthesizeResponse(content, creativity) {
       channel: personality.channels[tone],
       drift: Math.round(creativityFactor * 100),
       tags,
+      intent: intentProfile.intent,
+      intentConfidence: intentProfile.confidence,
+      intentScores: intentProfile.probabilities,
       protocol: qScore.protocol,
       qScore,
     },
@@ -492,20 +512,80 @@ function computeTagWeight(term, position, size, weighting = {}) {
   return Number(raw.toFixed(4));
 }
 
-function findBestSeed(tokens) {
+function findBestSeed({ tokens, tags = [], intentProfile }) {
   if (!state.seeds.length || !tokens.length) return null;
+
+  const userTags = normalizeTagCollection(tags);
   let best = null;
 
   for (const seed of state.seeds) {
     const seedTokens = tokenize(seed.prompt + " " + seed.response);
-    const score = jaccardSimilarity(tokens, seedTokens);
-    if (!best || score > best.score) {
-      best = { seed, score };
+    const jaccard = jaccardSimilarity(tokens, seedTokens);
+    const tagAlignment = computeTagAlignment(userTags, seed.tags);
+    const seedIntentProfile =
+      seed.intentProfile && seed.intentProfile.probabilities
+        ? seed.intentProfile
+        : scoreIntentProbabilities(`${seed.prompt} ${seed.response}`, seed.tags);
+    if (!seed.intentProfile || !seed.intentProfile.probabilities) {
+      seed.intentProfile = seedIntentProfile;
+    }
+
+    const intentAlignment = computeIntentAlignment(intentProfile, seedIntentProfile);
+    const topConfidence = intentProfile?.confidence ?? 0;
+    const fuzzyBase = jaccard * 0.5 + tagAlignment * 0.3 + intentAlignment * 0.2;
+    const composite = Number((Math.min(1, fuzzyBase * (0.7 + 0.3 * topConfidence))).toFixed(4));
+
+    const metrics = {
+      jaccard: Number(jaccard.toFixed(3)),
+      tagAlignment: Number(tagAlignment.toFixed(3)),
+      intentAlignment: Number(intentAlignment.toFixed(3)),
+      confidence: Number((topConfidence || 0).toFixed(3)),
+    };
+
+    if (!best || composite > best.score) {
+      best = { seed, score: composite, metrics };
     }
   }
 
-  if (!best || best.score === 0) return null;
+  if (!best || best.score <= 0) return null;
   return best;
+}
+
+function computeTagAlignment(userTags = [], seedTags = []) {
+  const normalizedUser = normalizeTagCollection(userTags);
+  const normalizedSeed = normalizeTagCollection(seedTags);
+  if (!normalizedUser.length || !normalizedSeed.length) return 0;
+
+  const userMap = new Map();
+  let userTotal = 0;
+  normalizedUser.forEach((tag) => {
+    userMap.set(tag.term, (userMap.get(tag.term) || 0) + (tag.weight || 1));
+    userTotal += tag.weight || 1;
+  });
+
+  let seedTotal = 0;
+  let shared = 0;
+  normalizedSeed.forEach((tag) => {
+    const weight = tag.weight || 1;
+    seedTotal += weight;
+    if (userMap.has(tag.term)) {
+      shared += Math.min(weight, userMap.get(tag.term));
+    }
+  });
+
+  const denominator = userTotal + seedTotal;
+  if (!denominator) return 0;
+  return (2 * shared) / denominator;
+}
+
+function computeIntentAlignment(userIntent = {}, seedIntent = {}) {
+  const userProbs = userIntent?.probabilities ?? {};
+  const seedProbs = seedIntent?.probabilities ?? {};
+  return INTENT_CLASSES.reduce((sum, intent) => {
+    const userScore = Number(userProbs[intent] ?? 0);
+    const seedScore = Number(seedProbs[intent] ?? 0);
+    return sum + userScore * seedScore;
+  }, 0);
 }
 
 function jaccardSimilarity(aTokens, bTokens) {
@@ -588,6 +668,8 @@ function buildFooter(meta = {}, role) {
   if (meta.creativity !== undefined && role === "user")
     chips.push(`Creativity: ${meta.creativity}`);
   if (meta.intent) chips.push(`Intent: ${meta.intent}`);
+  if (meta.intentConfidence !== undefined)
+    chips.push(`Intent Confidence: ${Math.round((meta.intentConfidence || 0) * 100)}%`);
   if (meta.persona) chips.push(`Persona: ${meta.persona}`);
   if (meta.channel) chips.push(`Channel: ${meta.channel}`);
   if (meta.drift !== undefined && role === "garden") chips.push(`Drift: ${meta.drift}%`);
@@ -598,6 +680,8 @@ function buildFooter(meta = {}, role) {
   if (meta.architecture) chips.push(`Architecture: ${meta.architecture}`);
   if (meta.protocol) chips.push(`Protocol: ${meta.protocol}`);
   if (meta.qScore?.total !== undefined) chips.push(`Q-Score: ${meta.qScore.total}`);
+  if (meta.compositeScore !== undefined)
+    chips.push(`Composite: ${Number(meta.compositeScore).toFixed(2)}`);
   if (meta.similarity) {
     chips.push(`Similarity: ${meta.similarity}`);
     if (meta.strategy === "seed-match") {
@@ -607,9 +691,24 @@ function buildFooter(meta = {}, role) {
       }
     }
   }
+  if (meta.similarityBreakdown) {
+    const { jaccard, tagAlignment, intentAlignment } = meta.similarityBreakdown;
+    hints.push(
+      `Composite breakdown — jaccard ${jaccard.toFixed(2)}, tag ${tagAlignment.toFixed(2)}, intent ${intentAlignment.toFixed(
+        2
+      )}.`
+    );
+  }
   if (meta.qScore?.components) {
     const { semantic, logical, ethics } = meta.qScore.components;
     hints.push(`Q-Score breakdown — semantic ${semantic}, logical ${logical}, ethical ${ethics}.`);
+  }
+  if (meta.intentScores) {
+    const intentHint = INTENT_CLASSES.map((intent) => {
+      const score = Number(meta.intentScores[intent] ?? 0);
+      return `${intent} ${score.toFixed(2)}`;
+    }).join(" · ");
+    hints.push(`Intent probabilities — ${intentHint}.`);
   }
   const chipMarkup = chips.map((chip) => `<span class="message__chip">${chip}</span>`).join(" ");
   const hintMarkup = hints.map((hint) => `<span class="message__hint">${hint}</span>`).join(" ");
@@ -691,6 +790,56 @@ function renderMetrics() {
     const node = ui.metrics.querySelector(`[data-stat="${dataAttr}"]`);
     if (node) node.textContent = value;
   });
+
+  const lastUserIntent = [...state.messages]
+    .reverse()
+    .find((message) => message.role === "user" && message.meta?.intentScores);
+  const intentNode = ensureMetricSlot("last-intent", "Latest intent mix");
+  if (intentNode) {
+    if (lastUserIntent?.meta?.intentScores) {
+      const parts = INTENT_CLASSES.map((intent) => {
+        const score = Number(lastUserIntent.meta.intentScores[intent] ?? 0);
+        return `${intent.slice(0, 1).toUpperCase()}${intent.slice(1)} ${Math.round(score * 100)}%`;
+      });
+      intentNode.textContent = parts.join(" · ");
+    } else {
+      intentNode.textContent = "—";
+    }
+  }
+
+  const lastGardenReply = [...state.messages]
+    .reverse()
+    .find((message) => message.role === "garden" && message.meta?.compositeScore);
+  const compositeNode = ensureMetricSlot("last-composite", "Latest composite score");
+  if (compositeNode) {
+    if (lastGardenReply?.meta?.compositeScore) {
+      const breakdown = lastGardenReply.meta.similarityBreakdown;
+      const parts = breakdown
+        ? `J ${breakdown.jaccard.toFixed(2)} · Tag ${breakdown.tagAlignment.toFixed(2)} · Intent ${breakdown.intentAlignment.toFixed(
+            2
+          )}`
+        : "";
+      compositeNode.textContent = `${Number(lastGardenReply.meta.compositeScore).toFixed(2)}${parts ? ` (${parts})` : ""}`;
+    } else {
+      compositeNode.textContent = "—";
+    }
+  }
+}
+
+function ensureMetricSlot(stat, label) {
+  if (!ui.metrics) return null;
+  let node = ui.metrics.querySelector(`[data-stat="${stat}"]`);
+  if (node) return node;
+  const wrapper = document.createElement("div");
+  const dt = document.createElement("dt");
+  dt.textContent = label;
+  const dd = document.createElement("dd");
+  dd.dataset.stat = stat;
+  dd.textContent = "—";
+  wrapper.appendChild(dt);
+  wrapper.appendChild(dd);
+  ui.metrics.appendChild(wrapper);
+  return dd;
 }
 
 function renderSeeds() {
@@ -844,6 +993,9 @@ function formatAbsoluteTime(iso) {
 }
 
 function loadState() {
+  if (typeof localStorage === "undefined") {
+    return defaultState();
+  }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState();
@@ -860,7 +1012,15 @@ function loadState() {
       parsed.seeds = parsed.seeds.map((seed) => ({
         ...seed,
         tags: normalizeTagCollection(seed.tags),
-      }));
+      }))
+        .map((seed) => {
+          const tags = seed.tags ?? [];
+          const profile =
+            seed.intentProfile && seed.intentProfile.probabilities
+              ? seed.intentProfile
+              : scoreIntentProbabilities(`${seed.prompt ?? ""} ${seed.response ?? ""}`, tags);
+          return { ...seed, tags, intentProfile: profile };
+        });
     }
     const base = defaultState();
     return {
@@ -891,6 +1051,9 @@ function loadState() {
 }
 
 function saveState() {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
   try {
     localStorage.setItem(
       STORAGE_KEY,
@@ -908,10 +1071,168 @@ function saveState() {
 
 function buildUserMeta(content, creativity) {
   const tags = deriveTags(content);
+  const intentProfile = scoreIntentProbabilities(content, tags);
   return {
     creativity,
-    intent: deriveIntent(content),
+    intent: intentProfile.intent,
+    intentConfidence: intentProfile.confidence,
+    intentScores: intentProfile.probabilities,
     tags,
+  };
+}
+
+function scoreIntentProbabilities(content, tags = []) {
+  const text = String(content ?? "");
+  const normalizedText = text.trim().toLowerCase();
+  const tokens = tokenize(text);
+  const lemmas = tokens.map((token) => stemToken(token));
+  const lemmaSet = new Set(lemmas);
+  const normalizedTags = normalizeTagCollection(tags);
+  const tagTerms = normalizedTags.map((tag) => tag.term);
+
+  const scores = INTENT_CLASSES.reduce((acc, intent) => {
+    acc[intent] = 0.001;
+    return acc;
+  }, {});
+
+  const addScore = (intent, value) => {
+    if (!INTENT_CLASSES.includes(intent) || !Number.isFinite(value)) return;
+    scores[intent] = Number((scores[intent] + Math.max(0, value)).toFixed(6));
+  };
+
+  const questionWords = ["how", "what", "why", "where", "when", "who", "which", "could", "would"];
+  const planningWords = [
+    "plan",
+    "outline",
+    "roadmap",
+    "schedule",
+    "strategy",
+    "design",
+    "draft",
+    "build",
+    "architecture",
+  ];
+  const reflectionWords = [
+    "remember",
+    "reflect",
+    "share",
+    "learned",
+    "insight",
+    "feeling",
+    "experience",
+    "story",
+    "journaling",
+  ];
+  const signalWords = [
+    "ping",
+    "update",
+    "note",
+    "heads",
+    "reminder",
+    "alert",
+    "status",
+    "signal",
+    "check",
+  ];
+
+  const containsAny = (collection) => collection.some((word) => lemmaSet.has(stemToken(word)));
+
+  if (/[?]/.test(text)) {
+    addScore("inquiry", 0.9);
+  }
+  if (tokens.length && tokens[0].endsWith("?")) {
+    addScore("inquiry", 0.4);
+  }
+
+  const questionWordHits = questionWords.filter((word) => lemmaSet.has(stemToken(word))).length;
+  if (questionWordHits) {
+    addScore("inquiry", 0.35 * questionWordHits);
+  }
+
+  planningWords.forEach((word) => {
+    if (lemmaSet.has(stemToken(word))) {
+      addScore("planning", 0.45);
+    }
+  });
+
+  reflectionWords.forEach((word) => {
+    if (lemmaSet.has(stemToken(word))) {
+      addScore("reflection", 0.35);
+    }
+  });
+
+  signalWords.forEach((word) => {
+    if (lemmaSet.has(stemToken(word))) {
+      addScore("signal", 0.3);
+    }
+  });
+
+  const firstPerson = ["i", "me", "my", "mine", "we", "our"].filter((word) => tokens.includes(word)).length;
+  if (firstPerson) {
+    addScore("reflection", 0.1 * firstPerson);
+  }
+
+  const imperativeCue = tokens[0] && !STOPWORDS.has(tokens[0]) && tokens.length <= 8;
+  if (imperativeCue) {
+    addScore("signal", 0.2);
+  }
+
+  const shortLength = tokens.length <= 6 || normalizedText.length <= 40;
+  if (shortLength) {
+    addScore("signal", 0.25);
+  }
+
+  const longForm = tokens.length >= 25;
+  if (longForm) {
+    addScore("reflection", 0.25);
+  }
+
+  if (containsAny(["next", "steps", "milestone", "timeline"])) {
+    addScore("planning", 0.35);
+  }
+
+  const tagScoreFor = (keywords) => {
+    return normalizedTags
+      .filter((tag) => keywords.some((keyword) => tag.term.includes(keyword)))
+      .reduce((sum, tag) => sum + (tag.weight || 1), 0);
+  };
+
+  const inquiryTagBoost = tagScoreFor(["question", "ask", "why", "how", "investigate"]);
+  if (inquiryTagBoost) addScore("inquiry", Math.min(0.6, inquiryTagBoost * 0.2));
+
+  const planningTagBoost = tagScoreFor(["plan", "roadmap", "strategy", "design", "architecture", "build"]);
+  if (planningTagBoost) addScore("planning", Math.min(0.7, planningTagBoost * 0.25));
+
+  const reflectionTagBoost = tagScoreFor(["journal", "reflect", "story", "insight", "memory", "feeling"]);
+  if (reflectionTagBoost) addScore("reflection", Math.min(0.6, reflectionTagBoost * 0.2));
+
+  const signalTagBoost = tagScoreFor(["signal", "update", "status", "alert", "ping", "notification"]);
+  if (signalTagBoost) addScore("signal", Math.min(0.5, signalTagBoost * 0.2));
+
+  if (normalizedTags.some((tag) => tag.kind === "phrase" && tag.term.includes("plan"))) {
+    addScore("planning", 0.35);
+  }
+
+  if (normalizedTags.some((tag) => tag.kind === "phrase" && tag.term.includes("remember"))) {
+    addScore("reflection", 0.3);
+  }
+
+  const total = Object.values(scores).reduce((sum, value) => sum + value, 0) || 1;
+  const probabilities = INTENT_CLASSES.reduce((acc, intent) => {
+    acc[intent] = Number((scores[intent] / total).toFixed(3));
+    return acc;
+  }, {});
+
+  const [intent, confidence] = Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0];
+
+  return {
+    intent,
+    confidence,
+    probabilities,
+    features: {
+      tokens: tokens.length,
+      tags: tagTerms,
+    },
   };
 }
 
@@ -997,19 +1318,17 @@ function deriveTags(content) {
     .map((tag) => ({ ...tag, weight: Number(tag.weight.toFixed(3)) }));
 }
 
-function deriveIntent(content) {
-  const normalized = content.trim().toLowerCase();
-  if (!normalized) return "reflection";
-  const questionWords = ["how", "what", "why", "where", "when", "who", "which"];
-  const tokens = tokenize(content);
-  if (normalized.endsWith("?") || tokens.some((token) => questionWords.includes(token))) {
-    return "inquiry";
-  }
-  if (tokens.some((token) => ["plan", "outline", "roadmap", "strategy", "design"].includes(token))) {
-    return "planning";
-  }
-  if (tokens.some((token) => ["share", "reflect", "remember", "note", "capture"].includes(token))) {
-    return "reflection";
-  }
-  return normalized.length < 40 ? "signal" : "reflection";
-}
+export {
+  scoreIntentProbabilities,
+  computeIntentAlignment,
+  computeTagAlignment,
+  jaccardSimilarity,
+  deriveTags,
+  tokenize,
+  stemToken,
+  normalizeTagCollection,
+  createTag,
+  mergeDeep,
+  INTENT_CLASSES,
+};
+
