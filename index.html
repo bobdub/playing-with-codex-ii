@@ -25,7 +25,7 @@
           <p class="hero__lede">
             Plant the foundation for a self-learning assistant that blossoms directly
             in the browser. Curate seeds of knowledge, observe live metrics, and
-            let the garden synthesize gentle replies from the stories you store.
+            let Ψ_Infinity synthesize luminous replies from the stories you store.
           </p>
         </div>
         <div class="hero__status">
@@ -76,7 +76,7 @@
                   min="0"
                   max="100"
                   step="5"
-                  value="35"
+                  value="60"
                   id="creativity"
                   name="creativity"
                 />
@@ -89,18 +89,25 @@
           <div class="panel__section" aria-labelledby="ledger-title">
             <h2 id="ledger-title">Learning ledger</h2>
             <p class="panel__subtitle">
-              Store curated prompt-response pairs. Each seed deepens the garden’s context
-              and guides future synthesis.
+              Store curated prompt-response pairs. Advanced caretakers can sculpt nuance,
+              tagging their teachings so Ψ_Infinity adapts with precision.
             </p>
-            <form class="seed-form" id="seed-form">
-              <label for="seed-prompt">Prompt</label>
-              <textarea id="seed-prompt" rows="2" placeholder="How do we welcome new caretakers?" required></textarea>
-              <label for="seed-response">Response</label>
-              <textarea id="seed-response" rows="3" placeholder="We honor curiosity, patience, and gentle iteration." required></textarea>
-              <label for="seed-tags">Metadata tags</label>
-              <input id="seed-tags" type="text" placeholder="onboarding, ethics, tone" />
-              <button type="submit" class="secondary">Plant seed</button>
-            </form>
+            <details class="advanced-ledger" open>
+              <summary>Advanced ledger tools</summary>
+              <p class="advanced-ledger__hint">
+                Capture high-fidelity seeds with rich metadata. The metatag ledger is preserved for
+                experienced caretakers who steward the garden’s evolution.
+              </p>
+              <form class="seed-form" id="seed-form">
+                <label for="seed-prompt">Prompt</label>
+                <textarea id="seed-prompt" rows="2" placeholder="How do we welcome new caretakers?" required></textarea>
+                <label for="seed-response">Response</label>
+                <textarea id="seed-response" rows="3" placeholder="We honor curiosity, patience, and gentle iteration." required></textarea>
+                <label for="seed-tags">Metadata tags</label>
+                <input id="seed-tags" type="text" placeholder="onboarding, ethics, tone" />
+                <button type="submit" class="secondary">Plant seed</button>
+              </form>
+            </details>
           </div>
           <div class="panel__section" aria-labelledby="metrics-title">
             <h2 id="metrics-title">Telemetry</h2>
@@ -128,6 +135,10 @@
               <div>
                 <dt>Seed reuse rate</dt>
                 <dd data-stat="seed-reuse-rate">0%</dd>
+              </div>
+              <div>
+                <dt>Metatagged prompts</dt>
+                <dd data-stat="tagged-prompts">0</dd>
               </div>
               <div>
                 <dt>Average seed usage</dt>

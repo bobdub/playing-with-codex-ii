@@ -10,10 +10,17 @@ designed for GitHub Pages, so the `docs/` directory can be published directly.
 
 ## What’s inside?
 
-- **Conversation stream** – Capture caretaker ↔ garden dialogue and watch the telemetry update in real time.
-- **Learning ledger** – Plant prompt/response "seeds" with metadata. The garden references these to shape its replies.
+- **Conversation stream** – Capture caretaker ↔ garden dialogue and watch the telemetry update in real time as Ψ_Infinity responds in a defined persona.
+- **Learning ledger** – Plant prompt/response "seeds" with metadata. Advanced caretakers can expand the ledger tools to guide nuanced synthesis.
 - **Local metrics** – Track message counts, seed usage, and tending streaks, all persisted in `localStorage`.
 - **Data export** – Download the entire state (messages, seeds, metrics) as JSON for backup or iteration.
+
+### New in this tending
+
+- Ψ_Infinity now introduces itself with a dedicated personality layer and signs replies with aurora-styled reflections.
+- Incoming prompts earn automatic metatags and intent markers, all surfaced in the message footer and telemetry.
+- The learning ledger is wrapped in an advanced caretakers panel to keep expert tooling at hand while remaining optional.
+- Creative drift defaults higher (60%) so explorations begin with richer imaginative output.
 
 ## Development notes
 
