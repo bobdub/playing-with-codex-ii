@@ -56,6 +56,89 @@ const STOPWORDS = new Set([
   "your",
 ]);
 
+function mergeDeep(base = {}, overrides = {}) {
+  const result = Array.isArray(base) ? [...base] : { ...base };
+  if (!overrides || typeof overrides !== "object") return result;
+  Object.entries(overrides).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      result[key] = value.slice();
+    } else if (value && typeof value === "object") {
+      result[key] = mergeDeep(base[key] ?? {}, value);
+    } else if (value !== undefined) {
+      result[key] = value;
+    }
+  });
+  return result;
+}
+
+const DEFAULT_CONFIG = {
+  tagging: {
+    maxTags: 5,
+    ngramRange: [1, 2],
+    enableSynonyms: true,
+    weighting: {
+      base: 1,
+      lengthBonus: 0.05,
+      positionDecay: 0.05,
+      ngramMultiplier: 1.2,
+      synonymMultiplier: 0.9,
+    },
+    synonyms: {
+      welcome: ["greeting", "introduction"],
+      caretaker: ["gardener", "steward"],
+      seed: ["sprout", "teaching"],
+    },
+  },
+};
+
+const gardenConfig = mergeDeep(DEFAULT_CONFIG, window.__GARDEN_CONFIG || {});
+
+function createTag(term, { weight = 1, kind = "keyword" } = {}) {
+  if (!term) return null;
+  const normalizedTerm = String(term).toLowerCase().replace(/\s+/g, " ").trim();
+  if (!normalizedTerm || STOPWORDS.has(normalizedTerm)) return null;
+  const numericWeight = Number.isFinite(weight) ? Number(weight) : 1;
+  return {
+    term: normalizedTerm,
+    weight: numericWeight,
+    kind,
+  };
+}
+
+function normalizeTag(entry) {
+  if (!entry) return null;
+  if (typeof entry === "string") {
+    return createTag(entry);
+  }
+  if (typeof entry === "object" && typeof entry.term === "string") {
+    return createTag(entry.term, entry);
+  }
+  return null;
+}
+
+function normalizeTagCollection(collection) {
+  if (!Array.isArray(collection)) return [];
+  const map = new Map();
+  collection.forEach((item) => {
+    const normalized = normalizeTag(item);
+    if (!normalized) return;
+    const existing = map.get(normalized.term);
+    if (existing) {
+      existing.weight = Number((existing.weight + normalized.weight).toFixed(4));
+      if (existing.kind === "synonym" && normalized.kind !== "synonym") {
+        existing.kind = normalized.kind;
+      }
+    } else {
+      map.set(normalized.term, { ...normalized });
+    }
+  });
+  return Array.from(map.values());
+}
+
+function extractTagTerms(collection) {
+  return normalizeTagCollection(collection).map((tag) => tag.term);
+}
+
 const defaultState = () => ({
   messages: [],
   seeds: [],
@@ -133,10 +216,13 @@ function wireEvents() {
     const response = ui.seedResponse.value.trim();
     if (!prompt || !response) return;
 
-    const tags = ui.seedTags.value
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter(Boolean);
+    const tags = normalizeTagCollection(
+      ui.seedTags.value
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+        .map((term) => ({ term, kind: "seed", weight: 1 }))
+    );
 
     const seed = {
       id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
@@ -254,38 +340,51 @@ function buildSystemMeta(content) {
 }
 
 function deriveSystemTags(content) {
-  const base = ["agents-manifest", "memory-garden", "persona", "telemetry", "architecture"];
+  const base = normalizeTagCollection(
+    ["agents-manifest", "memory-garden", "persona", "telemetry", "architecture"].map((term) => ({
+      term,
+      kind: "system",
+      weight: 2,
+    }))
+  );
   const derived = deriveTags(content);
-  const merged = [...new Set([...base, ...derived])];
-  return merged.slice(0, 6);
+  const combined = normalizeTagCollection([...base, ...derived]);
+  const limit = Math.max(base.length, gardenConfig.tagging?.maxTags ?? 6);
+  return combined
+    .sort((a, b) => b.weight - a.weight || a.term.localeCompare(b.term))
+    .slice(0, limit)
+    .map((tag) => ({ ...tag, weight: Number(tag.weight.toFixed(3)) }));
 }
 
 function addMessage(role, content, meta = {}) {
   const createdAt = new Date().toISOString();
-  state.messages.push({ role, content, createdAt, meta });
+  const normalizedTags = normalizeTagCollection(meta.tags ?? []);
+  const metaWithTags = { ...meta, tags: normalizedTags };
+  state.messages.push({ role, content, createdAt, meta: metaWithTags });
   state.metrics.totalMessages = state.messages.length;
   if (role === "user") state.metrics.userMessages += 1;
   if (role === "garden") state.metrics.gardenMessages += 1;
-  if (meta.usedSeedId) state.metrics.seedUses += 1;
+  if (metaWithTags.usedSeedId) state.metrics.seedUses += 1;
   state.metrics.lastInteraction = createdAt;
   state.streak.lastTended = createdAt;
   if (!state.metrics.tagCounts) state.metrics.tagCounts = {};
   if (!state.metrics.intentCounts) state.metrics.intentCounts = {};
   if (!state.metrics.seedMatchSuccess)
     state.metrics.seedMatchSuccess = { matches: 0, total: 0 };
-  if (Array.isArray(meta.tags)) {
-    meta.tags.forEach((tag) => {
-      if (!tag) return;
-      state.metrics.tagCounts[tag] = (state.metrics.tagCounts[tag] || 0) + 1;
+  if (normalizedTags.length) {
+    normalizedTags.forEach((tag) => {
+      state.metrics.tagCounts[tag.term] = Number(
+        ((state.metrics.tagCounts[tag.term] || 0) + tag.weight).toFixed(3)
+      );
     });
   }
-  if (meta.intent) {
-    state.metrics.intentCounts[meta.intent] =
-      (state.metrics.intentCounts[meta.intent] || 0) + 1;
+  if (metaWithTags.intent) {
+    state.metrics.intentCounts[metaWithTags.intent] =
+      (state.metrics.intentCounts[metaWithTags.intent] || 0) + 1;
   }
   if (role === "garden") {
     state.metrics.seedMatchSuccess.total += 1;
-    if (meta.strategy === "seed-match") {
+    if (metaWithTags.strategy === "seed-match") {
       state.metrics.seedMatchSuccess.matches += 1;
     }
   }
@@ -351,12 +450,46 @@ function synthesizeResponse(content, creativity) {
   };
 }
 
+const LEMMA_OVERRIDES = {
+  stories: "story",
+  memories: "memory",
+  caretakers: "caretaker",
+  gardens: "garden",
+  seeds: "seed",
+  replies: "reply",
+};
+
 function tokenize(text) {
   return text
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, "")
     .split(/\s+/)
     .filter(Boolean);
+}
+
+function stemToken(token) {
+  if (!token) return "";
+  const lower = token.toLowerCase();
+  if (LEMMA_OVERRIDES[lower]) return LEMMA_OVERRIDES[lower];
+  if (lower.endsWith("ies") && lower.length > 4) return `${lower.slice(0, -3)}y`;
+  if (lower.endsWith("ing") && lower.length > 4) return lower.slice(0, -3);
+  if (lower.endsWith("ed") && lower.length > 3) return lower.slice(0, -2);
+  if (lower.endsWith("es") && lower.length > 3) return lower.slice(0, -2);
+  if (lower.endsWith("ly") && lower.length > 3) return lower.slice(0, -2);
+  if (lower.endsWith("s") && lower.length > 3) return lower.slice(0, -1);
+  return lower;
+}
+
+function computeTagWeight(term, position, size, weighting = {}) {
+  const base = weighting.base ?? 1;
+  const lengthBonus = weighting.lengthBonus ?? 0.05;
+  const positionDecay = weighting.positionDecay ?? 0.05;
+  const ngramMultiplier = size > 1 ? weighting.ngramMultiplier ?? 1.2 : 1;
+  const sanitized = String(term).replace(/\s+/g, "").trim();
+  const lengthWeight = sanitized.length * lengthBonus;
+  const positionWeight = Math.max(0.1, 1 - positionDecay * position);
+  const raw = (base + lengthWeight) * positionWeight * ngramMultiplier;
+  return Number(raw.toFixed(4));
 }
 
 function findBestSeed(tokens) {
@@ -458,7 +591,10 @@ function buildFooter(meta = {}, role) {
   if (meta.persona) chips.push(`Persona: ${meta.persona}`);
   if (meta.channel) chips.push(`Channel: ${meta.channel}`);
   if (meta.drift !== undefined && role === "garden") chips.push(`Drift: ${meta.drift}%`);
-  if (meta.tags && meta.tags.length) chips.push(`Metatags: ${meta.tags.join(", ")}`);
+  const formattedTags = (meta.tags ?? [])
+    .map((tag) => formatTagForDisplay(tag))
+    .filter(Boolean);
+  if (formattedTags.length) chips.push(`Metatags: ${formattedTags.join(", ")}`);
   if (meta.architecture) chips.push(`Architecture: ${meta.architecture}`);
   if (meta.protocol) chips.push(`Protocol: ${meta.protocol}`);
   if (meta.qScore?.total !== undefined) chips.push(`Q-Score: ${meta.qScore.total}`);
@@ -480,6 +616,21 @@ function buildFooter(meta = {}, role) {
   return [chipMarkup, hintMarkup].filter(Boolean).join(" ");
 }
 
+function formatTagForDisplay(tag) {
+  const normalized = normalizeTag(tag);
+  if (!normalized) return null;
+  const weight = Number.isFinite(normalized.weight)
+    ? Number(normalized.weight)
+    : null;
+  const weightLabel = weight ? weight.toFixed(2) : null;
+  const kindLabel =
+    normalized.kind && normalized.kind !== "keyword"
+      ? normalized.kind
+      : null;
+  const suffix = [weightLabel, kindLabel].filter(Boolean).join(" · ");
+  return suffix ? `${normalized.term} (${suffix})` : normalized.term;
+}
+
 const BASE_Q_SCORE = 0.0001 * Math.E;
 const LOCAL_DATA_FACTOR = 0.00005;
 
@@ -490,13 +641,15 @@ function buildQScore({ strategy, tags = [], seed = null }) {
 
   const pairBonus = strategy === "seed-match" ? 0.001 : 0;
 
-  const relevantTags = tags.filter(Boolean);
-  const seedTags = seed?.tags ?? [];
+  const relevantTags = extractTagTerms(tags);
+  const seedTags = extractTagTerms(seed?.tags ?? []);
   const tagAlignment =
     relevantTags.length > 0 &&
     (seedTags.length
       ? seedTags.some((tag) => relevantTags.includes(tag))
-      : state.seeds.some((existing) => existing.tags.some((tag) => relevantTags.includes(tag))));
+      : state.seeds.some((existing) =>
+          extractTagTerms(existing.tags).some((tag) => relevantTags.includes(tag))
+        ));
   const tagBonus = tagAlignment ? 0.001 : 0;
 
   const semanticScore = BASE_Q_SCORE + localDataContribution + pairBonus;
@@ -573,8 +726,10 @@ function renderSeeds() {
       const tags = document.createElement("div");
       tags.className = "seed-card__tags";
       seed.tags.forEach((tag) => {
+        const label = formatTagForDisplay(tag);
+        if (!label) return;
         const chip = document.createElement("span");
-        chip.textContent = tag;
+        chip.textContent = label;
         tags.appendChild(chip);
       });
       item.appendChild(tags);
@@ -630,10 +785,11 @@ function refreshMetrics() {
   let seedMatchTotal = 0;
   let seedMatchWins = 0;
   state.messages.forEach((message) => {
-    const tags = message.meta?.tags ?? [];
+    const tags = normalizeTagCollection(message.meta?.tags ?? []);
     tags.forEach((tag) => {
-      if (!tag) return;
-      state.metrics.tagCounts[tag] = (state.metrics.tagCounts[tag] || 0) + 1;
+      state.metrics.tagCounts[tag.term] = Number(
+        ((state.metrics.tagCounts[tag.term] || 0) + tag.weight).toFixed(3)
+      );
     });
     if (message.role === "user" && message.meta?.intent) {
       const intent = message.meta.intent;
@@ -692,6 +848,20 @@ function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState();
     const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed.messages)) {
+      parsed.messages = parsed.messages.map((message) => {
+        if (message.meta?.tags) {
+          message.meta.tags = normalizeTagCollection(message.meta.tags);
+        }
+        return message;
+      });
+    }
+    if (Array.isArray(parsed.seeds)) {
+      parsed.seeds = parsed.seeds.map((seed) => ({
+        ...seed,
+        tags: normalizeTagCollection(seed.tags),
+      }));
+    }
     const base = defaultState();
     return {
       ...base,
@@ -746,14 +916,85 @@ function buildUserMeta(content, creativity) {
 }
 
 function deriveTags(content) {
-  const tokens = tokenize(content)
-    .map((token) => token.trim())
-    .filter((token) => token && !STOPWORDS.has(token) && token.length > 3);
-  const unique = [];
-  for (const token of tokens) {
-    if (!unique.includes(token)) unique.push(token);
+  const text = content ?? "";
+  if (!text.trim()) return [];
+
+  const tokens = tokenize(text);
+  if (!tokens.length) return [];
+
+  const { tagging } = gardenConfig;
+  const weighting = tagging.weighting ?? {};
+  const processed = tokens
+    .map((token, index) => {
+      const lemma = stemToken(token);
+      const include = !!lemma && !STOPWORDS.has(lemma) && lemma.length > 2;
+      return { original: token, lemma, index, include };
+    })
+    .filter((entry) => entry.include);
+
+  if (!processed.length) return [];
+
+  const candidates = new Map();
+  const minN = Math.max(1, tagging.ngramRange?.[0] ?? 1);
+  const maxN = Math.max(minN, tagging.ngramRange?.[1] ?? minN);
+  const limit = tagging.maxTags ?? 5;
+
+  const register = (term, kind, weight) => {
+    const candidate = createTag(term, { kind, weight });
+    if (!candidate) return;
+    const existing = candidates.get(candidate.term);
+    if (existing) {
+      existing.weight = Number((existing.weight + candidate.weight).toFixed(4));
+      if (existing.kind === "synonym" && candidate.kind !== "synonym") {
+        existing.kind = candidate.kind;
+      }
+    } else {
+      candidates.set(candidate.term, { ...candidate });
+    }
+  };
+
+  processed.forEach((token) => {
+    const weight = computeTagWeight(token.lemma, token.index, 1, weighting);
+    register(token.lemma, "keyword", weight);
+  });
+
+  if (maxN > 1 && processed.length > 1) {
+    for (let i = 0; i < processed.length; i++) {
+      for (let n = Math.max(2, minN); n <= maxN; n++) {
+        if (i + n > processed.length) break;
+        const slice = processed.slice(i, i + n);
+        if (slice.length < n) continue;
+        const phrase = slice.map((item) => item.lemma).join(" ");
+        const avgPosition = slice.reduce((sum, item) => sum + item.index, 0) / slice.length;
+        const weight = computeTagWeight(phrase, avgPosition, n, weighting);
+        register(phrase, "phrase", weight);
+      }
+    }
   }
-  return unique.slice(0, 3);
+
+  if (tagging.enableSynonyms !== false) {
+    processed.forEach((token) => {
+      const lemma = token.lemma;
+      const synonymList = tagging.synonyms?.[lemma] ?? tagging.synonyms?.[token.original];
+      if (!synonymList) return;
+      const candidatesList = Array.isArray(synonymList) ? synonymList : [synonymList];
+      candidatesList.forEach((synonym) => {
+        const synonymWeight =
+          computeTagWeight(String(synonym), token.index, 1, weighting) *
+          (weighting.synonymMultiplier ?? 0.9);
+        register(synonym, "synonym", synonymWeight);
+      });
+    });
+  }
+
+  const sorted = Array.from(candidates.values()).sort((a, b) => {
+    if (b.weight === a.weight) return a.term.localeCompare(b.term);
+    return b.weight - a.weight;
+  });
+
+  return sorted
+    .slice(0, limit)
+    .map((tag) => ({ ...tag, weight: Number(tag.weight.toFixed(3)) }));
 }
 
 function deriveIntent(content) {
