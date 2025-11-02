@@ -9,6 +9,8 @@ const defaultState = () => ({
     gardenMessages: 0,
     seedUses: 0,
     lastInteraction: null,
+    seedMatchReplies: 0,
+    fallbackReplies: 0,
   },
   streak: {
     days: 0,
@@ -270,6 +272,11 @@ function renderMetrics() {
     "garden-messages": state.metrics.gardenMessages,
     "avg-seed-usage": state.seeds.length ? (state.metrics.seedUses / state.seeds.length).toFixed(2) : "0",
     "last-interaction": state.metrics.lastInteraction ? formatAbsoluteTime(state.metrics.lastInteraction) : "—",
+    "seed-match-replies": state.metrics.seedMatchReplies,
+    "fallback-replies": state.metrics.fallbackReplies,
+    "seed-reuse-rate": state.metrics.gardenMessages
+      ? `${Math.round((state.metrics.seedMatchReplies / state.metrics.gardenMessages) * 100)}%`
+      : "0%",
   };
 
   Object.entries(mapping).forEach(([dataAttr, value]) => {
@@ -335,6 +342,9 @@ function refreshMetrics() {
   state.metrics.userMessages = state.messages.filter((m) => m.role === "user").length;
   state.metrics.gardenMessages = state.messages.filter((m) => m.role === "garden").length;
   state.metrics.seedUses = state.seeds.reduce((acc, seed) => acc + seed.uses, 0);
+  const gardenMessages = state.messages.filter((m) => m.role === "garden");
+  state.metrics.seedMatchReplies = gardenMessages.filter((m) => m.meta?.strategy === "seed-match").length;
+  state.metrics.fallbackReplies = gardenMessages.filter((m) => m.meta?.strategy === "fallback").length;
   state.metrics.lastInteraction = state.messages.length
     ? state.messages[state.messages.length - 1].createdAt
     : null;
