@@ -203,7 +203,7 @@ const ui = typeof document !== "undefined"
       composer: document.getElementById("composer"),
       messageInput: document.getElementById("message-input"),
       creativity: document.getElementById("creativity"),
-      clearChatBtn: document.getElementById("clear-chat"),
+      clearBtn: document.getElementById("clear-convo"),
       exportBtn: document.getElementById("export-data"),
       seedForm: document.getElementById("seed-form"),
       seedPrompt: document.getElementById("seed-prompt"),
@@ -296,8 +296,8 @@ function wireEvents() {
     });
   }
 
-  if (ui.clearChatBtn) {
-    ui.clearChatBtn.addEventListener("click", () => {
+  if (ui.clearBtn) {
+    ui.clearBtn.addEventListener("click", () => {
       if (state.messages.length <= 1) return;
       if (!confirm("Clear the conversation history?")) return;
       state.messages = state.messages.filter((msg) => msg.role === "system");
@@ -1351,20 +1351,11 @@ function renderSeeds() {
 }
 
 function renderHero() {
-  if (!ui.heroSeeds && !ui.heroLastTended && !ui.heroStreak && !ui.lastTendedCard && !ui.streakAlert) {
-    return;
-  }
-  if (ui.heroSeeds) {
-    ui.heroSeeds.textContent = state.seeds.length;
-  }
-  if (ui.heroLastTended) {
-    ui.heroLastTended.textContent = state.streak.lastTended
-      ? formatAbsoluteTime(state.streak.lastTended)
-      : "—";
-  }
-  if (ui.heroStreak) {
-    ui.heroStreak.textContent = `${state.streak.days} day${state.streak.days === 1 ? "" : "s"}`;
-  }
+  ui.heroSeeds.textContent = state.seeds.length;
+  ui.heroLastTended.textContent = state.streak.lastTended
+    ? formatAbsoluteTime(state.streak.lastTended)
+    : "—";
+  ui.heroStreak.textContent = `${state.streak.days} day${state.streak.days === 1 ? "" : "s"}`;
   const stale = isStreakStale();
   if (ui.lastTendedCard) {
     ui.lastTendedCard.classList.toggle("status-card--warning", stale);
