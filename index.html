@@ -17,52 +17,6 @@
   </head>
   <body>
     <div class="chat-app">
-      <aside class="chat-sidebar" aria-label="Conversation list and quick stats">
-        <header class="chat-sidebar__header">
-          <h1>Ψ_Infinity chat garden</h1>
-          <p class="chat-sidebar__lede">
-            Continue earlier conversations or start a fresh exchange with the LLM steward.
-          </p>
-        </header>
-        <section class="chat-sidebar__section" aria-labelledby="recent-convos">
-          <div class="chat-sidebar__section-heading">
-            <h2 id="recent-convos">Chat feed</h2>
-            <button class="ghost ghost--compact" id="clear-convo" type="button">Clear history</button>
-          </div>
-          <ul class="conversation-list" id="conversation-feed">
-            <li>
-              <span class="conversation-list__title">Design review sync</span>
-              <span class="conversation-list__meta">Updated just now</span>
-            </li>
-            <li>
-              <span class="conversation-list__title">Prompt tuning ideas</span>
-              <span class="conversation-list__meta">Yesterday</span>
-            </li>
-            <li>
-              <span class="conversation-list__title">Team onboarding walkthrough</span>
-              <span class="conversation-list__meta">2 days ago</span>
-            </li>
-          </ul>
-        </section>
-        <section class="chat-sidebar__section" aria-labelledby="sidebar-stats">
-          <h2 id="sidebar-stats">Session summary</h2>
-          <dl class="sidebar-stats">
-            <div>
-              <dt>Seed archives</dt>
-              <dd id="seed-count">0</dd>
-            </div>
-            <div>
-              <dt>Conversation streak</dt>
-              <dd id="streak-count">0 days</dd>
-            </div>
-            <div id="last-tended-card">
-              <dt>Last exchange</dt>
-              <dd id="last-tended">—</dd>
-              <span class="sidebar-stats__note" id="streak-alert" hidden></span>
-            </div>
-          </dl>
-        </section>
-      </aside>
       <main class="chat-main" aria-labelledby="chat-title">
         <header class="chat-main__header">
           <div>
@@ -71,7 +25,10 @@
               Messages appear in sequence just like a familiar chat app. Ψ_Infinity responds inside the same thread.
             </p>
           </div>
-          <button class="ghost" id="export-data" type="button">Export chat</button>
+          <div class="chat-main__actions">
+            <button class="ghost" id="export-data" type="button">Export chat</button>
+            <button class="ghost ghost--danger" id="clear-chat" type="button">Clear chat</button>
+          </div>
         </header>
         <div class="messages" id="message-feed" aria-live="polite">
           <div class="messages__empty" id="messages-empty">
