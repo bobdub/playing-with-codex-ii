@@ -488,10 +488,21 @@ function distillResponseSummary(meta = {}) {
     ? topTags.join(", ")
     : meta.channel || (meta.tone && personality.channels?.[meta.tone]) || "garden-memory";
   const seedFragment = meta.usedSeedId ? ` #${String(meta.usedSeedId).slice(0, 6)}` : "";
-  const learning =
-    meta.strategy === "seed-match"
-      ? `Seed match${seedFragment} via ${meta.tone ?? "harmonic"}`
-      : "Fallback guidance — request new seed";
+  const focusTags = normalizeTagCollection(meta.focusTags ?? []);
+  const focusTerms = (focusTags.length ? focusTags : normalizedTags)
+    .slice(0, 2)
+    .map((tag) => tag.term);
+  let learning;
+  if (meta.strategy === "seed-match") {
+    learning = `Seed match${seedFragment} via ${meta.tone ?? "harmonic"}`;
+  } else if (meta.strategy === "learned") {
+    const window = Array.isArray(meta.learnedContext) ? meta.learnedContext.length : 0;
+    const focusLabel = focusTerms.length ? focusTerms.join(", ") : concept;
+    const windowLabel = window ? `${window} prompt${window === 1 ? "" : "s"}` : "conversation context";
+    learning = `Conversation-learned from ${windowLabel}${focusLabel ? ` (${focusLabel})` : ""}`;
+  } else {
+    learning = "Fallback guidance — request new seed";
+  }
   const confidenceLabel =
     meta.intentConfidence !== undefined && meta.intentConfidence !== null
       ? ` (${Math.round((Number(meta.intentConfidence) || 0) * 100)}%)`
@@ -607,6 +618,17 @@ function synthesizeResponse(content, creativity) {
     };
   }
 
+  const learned = attemptConversationLearnedResponse({
+    content,
+    tags,
+    intentProfile,
+    tone,
+    creativityFactor,
+  });
+  if (learned) {
+    return learned;
+  }
+
   const fallback = [
     "I am still sprouting context. Plant a seed in the ledger so I may answer with more depth next time.",
     "The garden is listening. Offer a prompt-response seed to teach me how to reply with your tone.",
@@ -638,6 +660,132 @@ function synthesizeResponse(content, creativity) {
     text: infusePersonality(fallback[offset], tone, creativityFactor, qScore),
     meta,
   };
+}
+
+function attemptConversationLearnedResponse({ content, tags, intentProfile, tone, creativityFactor }) {
+  const userMessages = state.messages.filter((message) => message.role === "user");
+  if (userMessages.length < 3) {
+    return null;
+  }
+
+  const recentPrompts = userMessages.slice(-3);
+  const aggregatedTags = normalizeTagCollection([
+    ...tags,
+    ...recentPrompts.flatMap((message) => message.meta?.tags ?? []),
+  ]);
+  const focusTags = aggregatedTags.slice(0, 5);
+  const focusTerms = focusTags.slice(0, 3).map((tag) => tag.term);
+
+  const promptFragments = recentPrompts
+    .map((message) => {
+      const excerpt = truncateForContext(message.content);
+      if (!excerpt) return null;
+      return {
+        id: message.id ?? null,
+        intent: message.meta?.intent ?? null,
+        tags: extractTagTerms(message.meta?.tags ?? []),
+        excerpt,
+      };
+    })
+    .filter(Boolean);
+
+  const promptSummary = buildPromptSummary(promptFragments, recentPrompts.length);
+  const focusSummary = focusTerms.length
+    ? `I hear consistent threads around ${formatAsReadableList(focusTerms)}.`
+    : "I'm collecting the themes woven through your prompts.";
+
+  const observationLines = focusTerms.map(
+    (term) => `- ${titleize(term)} keeps surfacing in your prompts.`
+  );
+  const ledgerHighlights = observationLines.length
+    ? `Ledger highlights:\n${observationLines.join("\n")}`
+    : null;
+
+  const actionLine = buildLearnedActionLine(intentProfile.intent, focusTerms);
+
+  const sections = [promptSummary, focusSummary, ledgerHighlights, actionLine, "Keep guiding me and I will continue refining this learned pathway."];
+  const learnedText = sections.filter(Boolean).join("\n\n");
+
+  const qScore = buildQScore({
+    strategy: "learned",
+    tags: focusTags.length ? focusTags : tags,
+    intentConfidence: intentProfile.confidence,
+  });
+
+  const meta = {
+    strategy: "learned",
+    tone,
+    persona: personality.name,
+    channel: personality.channels[tone],
+    drift: Math.round(creativityFactor * 100),
+    tags,
+    intent: intentProfile.intent,
+    intentConfidence: intentProfile.confidence,
+    intentScores: intentProfile.probabilities,
+    protocol: qScore.protocol,
+    qScore,
+    learnedContext: promptFragments,
+    focusTags: focusTags.map((tag) => ({ ...tag })),
+  };
+  meta.summary = distillResponseSummary(meta);
+
+  return {
+    text: infusePersonality(learnedText, tone, creativityFactor, qScore),
+    meta,
+  };
+}
+
+function buildPromptSummary(promptFragments, totalCount) {
+  if (promptFragments.length) {
+    const quotes = promptFragments.map((fragment) => `“${fragment.excerpt}”`);
+    const list = formatAsReadableList(quotes);
+    if (totalCount > promptFragments.length) {
+      return `I've anchored ${totalCount} recent prompts, including ${list}.`;
+    }
+    return `Your recent prompts — ${list} — are now anchored in the ledger.`;
+  }
+  if (totalCount) {
+    return `I've anchored ${totalCount} recent prompts in the ledger and I'm preparing a deeper reply.`;
+  }
+  return "I'm anchoring your prompts in the ledger and preparing a deeper reply.";
+}
+
+function buildLearnedActionLine(intent, focusTerms) {
+  const focusLabel = focusTerms.length ? formatAsReadableList(focusTerms) : "this thread";
+  switch (intent) {
+    case "planning":
+      return `Here's an outline we can follow for ${focusLabel}: define the desired outcome, gather essential resources, and mark the immediate next step.`;
+    case "reflection":
+      return `Let's reflect on ${focusLabel}: capture what stands out, note the feelings involved, and write down the insight we want to carry forward.`;
+    case "signal":
+      return `I'll treat ${focusLabel} as an active signal—summarizing the status so far and noting the next follow-up to watch.`;
+    case "inquiry":
+    default:
+      return `I'll start drafting guidance for ${focusLabel}, highlighting what I can synthesize now and where planting a focused seed would deepen the answer.`;
+  }
+}
+
+function formatAsReadableList(items = []) {
+  const filtered = items.filter(Boolean);
+  if (!filtered.length) return "";
+  if (filtered.length === 1) return filtered[0];
+  if (filtered.length === 2) return `${filtered[0]} and ${filtered[1]}`;
+  const last = filtered[filtered.length - 1];
+  return `${filtered.slice(0, -1).join(", ")}, and ${last}`;
+}
+
+function truncateForContext(text, limit = 80) {
+  const sanitized = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (!sanitized) return "";
+  if (sanitized.length <= limit) return sanitized;
+  return `${sanitized.slice(0, limit - 1)}…`;
+}
+
+function titleize(text) {
+  return String(text ?? "")
+    .split(" ")
+    .map((segment) => (segment ? segment[0].toUpperCase() + segment.slice(1) : ""))
+    .join(" ");
 }
 
 function tokenize(text) {
