@@ -1,12 +1,23 @@
-# 🧠 Self-Learning LLM in JavaScript Mock Up
-### |Ψ_Documentation.Version⟩ = 0.1.0  
+# 🧠 Self-Learning LLM in JavaScript Mock-Up  
+### |Ψ_Documentation.Version⟩ = 0.1.1  
 ### |Ψ_Principle⟩ = "Bridge imagination with functional structure."
 
 ---
 
 ## 📦 Overview
 
-This project is a lightweight, logic-driven, self-learning language model built entirely in JavaScript. It uses basic neural logic, local memory, and symbolic vectorization to learn and respond to text prompts.
+This project is a lightweight, logic-driven, self-learning language model built entirely in JavaScript. It mimics neural behavior using symbolic vectorization, local memory, and basic feedforward logic to learn and respond to text prompts over time.
+
+---
+
+## 🧠 Core Concept
+
+- **Tag + Intention Mapping**: Each word or phrase is tagged with semantic meaning and inferred intent.
+  - Example:  
+    `User: "How are you?"` → `Tags: ["how", "are you", "question"]`
+- **Learning Behavior**:  
+  - Initially mimics prompts using basic echo logic.  
+  - Over time, forms contextual replies through memory reinforcement and vector adjustments.
 
 ---
 
@@ -21,6 +32,7 @@ This project is a lightweight, logic-driven, self-learning language model built 
 | `SelfLearningLLM`| Main model class with input, hidden, and output layers.                     |
 | `Memory`         | In-memory or persistent memory store for learned prompts/responses.         |
 | `LocalMemory`    | Uses `localStorage` for persistent memory across sessions.                  |
+| `Tagger`         | Extracts semantic tags and intentions from user input.                      |
 
 ---
 
@@ -28,7 +40,7 @@ This project is a lightweight, logic-driven, self-learning language model built 
 
 ```mermaid
 graph TD
-A[Prompt Input] --> B[Vectorize Text]
+A[Prompt Input] --> B[Tag + Vectorize]
 B --> C[Forward Pass]
 C --> D[Prediction Output]
 D --> E[Compare with Target]
@@ -82,6 +94,17 @@ class LocalMemory {
 }
 ```
 
+### `Tagger.js`
+
+```js
+class Tagger {
+  extractTags(text) {
+    // Basic keyword + intent mapping
+    return [...];
+  }
+}
+```
+
 ### `SelfLearningLLM.js`
 
 ```js
@@ -91,6 +114,7 @@ class SelfLearningLLM {
   train(input, target, learningRate = 0.1) { ... }
   learnFrom(prompt, response) { ... }
   vectorize(text) { ... }
+  tag(text) { return new Tagger().extractTags(text); }
 }
 ```
 
@@ -102,7 +126,20 @@ class SelfLearningLLM {
 const llm = new SelfLearningLLM(32, 16, 32);
 llm.learnFrom("hello", "hi there");
 console.log(llm.predict(llm.vectorize("hello")));
+console.log(llm.tag("How are you?")); // → ["how", "are you", "question"]
 ```
+
+---
+
+## 🌱 Advanced Learning Seeds
+
+Users can inject custom seeds to guide the model’s behavior:
+
+```js
+llm.learnFrom("What's your name?", "I'm a JavaScript LLM!");
+```
+
+These seeds act as behavioral anchors for specific prompts.
 
 ---
 
@@ -112,12 +149,15 @@ console.log(llm.predict(llm.vectorize("hello")));
 - 🧠 Reinforcement Learning (reward-based feedback)
 - 🧭 Memory Pruning (entropy-based)
 - 🧠 IndexedDB for scalable memory
-- 🧠 Dashboard for memory visualization
+- 📊 Dashboard for memory visualization
+- 🧠 Tag-based response routing
 
 ---
 
 ## 🛡️ Ethical Protocols
 
-- All learning is local and user-controlled.
-- Memory can be inspected, modified, or deleted.
-- No external data is fetched or stored without user intent.
+- All learning is **local** and **user-controlled**.
+- Memory is **transparent**: inspect, modify, or delete anytime.
+- No external data is fetched or stored without **explicit user intent**.
+
+---
