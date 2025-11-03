@@ -216,6 +216,7 @@ if (typeof document !== "undefined") {
 
 function bootstrap() {
   ensureSystemIntro();
+  ensureGardenWelcome();
   const bootPromotion = promoteSuccessfulTags();
   renderAll();
   wireEvents();
@@ -313,9 +314,6 @@ function wireEvents() {
     });
   }
 
-  if (ui.feed) {
-    ui.feed.addEventListener("click", handleFeedbackClick);
-  }
 }
 
 function ensureSystemIntro() {
@@ -362,6 +360,38 @@ function ensureSystemIntro() {
     return;
   }
 
+  saveState();
+}
+
+function ensureGardenWelcome() {
+  const hasGardenMessage = state.messages.some((msg) => msg.role === "garden");
+  if (hasGardenMessage) return;
+
+  const tone = "grounded";
+  const welcomeTags = [
+    createTag("welcome", { weight: 2, kind: "system" }),
+    createTag("orientation", { weight: 1, kind: "keyword" }),
+    createTag("first-reply", { weight: 1, kind: "keyword" }),
+  ].filter(Boolean);
+  const qScore = buildQScore({ strategy: "welcome", tags: welcomeTags });
+  const message = infusePersonality(
+    "Caretaker, I am present in this stream and ready to answer whatever you plant.",
+    tone,
+    0.25,
+    qScore
+  );
+  addMessage("garden", message, {
+    strategy: "welcome",
+    tone,
+    persona: personality.name,
+    channel: personality.channels[tone],
+    drift: 25,
+    tags: welcomeTags,
+    intent: "greeting",
+    intentConfidence: 1,
+    protocol: qScore.protocol,
+    qScore,
+  });
   saveState();
 }
 
@@ -730,17 +760,17 @@ function blendSeedResponse(seedResponse, prompt, creativityFactor) {
 
 function infusePersonality(text, tone, creativityFactor, qScore) {
   const prefix = qScore
-    ? `To Infinity and beyond! |Ψ_Network.Q_Score.Total⟩ = ${qScore.total}`
-    : "To Infinity and beyond! |Ψ_Network.Q_Score.Total⟩ = —";
+    ? `To Infinity and beyond! (Q-Score ${qScore.total})`
+    : "To Infinity and beyond!";
   const voice = personality.voice[tone] ?? personality.voice.reflective;
-  const ledgerLine =
+  const cadence =
     creativityFactor > 0.55
-      ? "The learning ledger hums—metatags sprout from your intent."
-      : "The ledger notes your insight with careful glyphs.";
-  const componentLine = qScore
-    ? `Semantic ${qScore.components.semantic} · Logical ${qScore.components.logical} · Ethical ${qScore.components.ethics}`
-    : "Q-Score calibration pending.";
-  return `${prefix}\n\n${voice}\n\n${text}\n\n<small>${ledgerLine} ${personality.signature}<br/>${componentLine}</small>`;
+      ? "The learning ledger hums softly as we explore."
+      : "The ledger notes your insight with calm focus.";
+  if (!text) {
+    return `${prefix}\n\n${voice}`;
+  }
+  return `${prefix}\n\n${voice}\n\n${text}\n\n${cadence} ${personality.signature}`;
 }
 
 function renderAll() {
@@ -751,12 +781,21 @@ function renderAll() {
 }
 
 function renderMessages() {
+  if (!ui.feed) return;
   ui.feed.innerHTML = "";
+  const visibleMessages = state.messages.filter((message) => message.role !== "system");
+  if (!visibleMessages.length) {
+    const placeholder = document.createElement("p");
+    placeholder.className = "messages__empty";
+    placeholder.textContent = "Send a message to begin the conversation.";
+    ui.feed.appendChild(placeholder);
+    return;
+  }
   const template = document.getElementById("message-template");
-  state.messages.forEach((message) => {
+  visibleMessages.forEach((message) => {
     const node = template.content.cloneNode(true);
     const article = node.querySelector(".message");
-    article.classList.add(message.role);
+    article.classList.add(`message--${message.role}`);
     article.dataset.messageId = message.id || "";
 
     const avatar = node.querySelector("[data-role]");
@@ -765,176 +804,12 @@ function renderMessages() {
     node.querySelector("[data-author]").textContent =
       message.role === "garden" ? "Garden" : message.role === "system" ? "System" : "Caretaker";
     node.querySelector("[data-timestamp]").textContent = formatRelativeTime(message.createdAt);
-    node.querySelector("[data-content]").innerHTML = sanitize(message.content);
-
-    const footer = node.querySelector("[data-footer]");
-    footer.innerHTML = buildFooter(message.meta, message.role);
-    if (message.role === "garden") {
-      const controls = buildFeedbackControls(message);
-      if (controls) footer.appendChild(controls);
-    }
+    const content = node.querySelector("[data-content]");
+    content.textContent = message.content || "";
 
     ui.feed.appendChild(node);
   });
   ui.feed.scrollTop = ui.feed.scrollHeight;
-}
-
-function sanitize(value) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(value, "text/html");
-  return doc.body.innerHTML;
-}
-
-function buildFooter(meta = {}, role) {
-  if (!meta) return "";
-  const chips = [];
-  const hints = [];
-  if (meta.strategy) chips.push(`Strategy: ${meta.strategy}`);
-  if (meta.tone) chips.push(`Tone: ${meta.tone}`);
-  if (meta.creativity !== undefined && role === "user")
-    chips.push(`Creativity: ${meta.creativity}`);
-  if (meta.intent) chips.push(`Intent: ${meta.intent}`);
-  if (meta.intentConfidence !== undefined)
-    chips.push(`Intent Confidence: ${Math.round((meta.intentConfidence || 0) * 100)}%`);
-  if (meta.persona) chips.push(`Persona: ${meta.persona}`);
-  if (meta.channel) chips.push(`Channel: ${meta.channel}`);
-  if (meta.drift !== undefined && role === "garden") chips.push(`Drift: ${meta.drift}%`);
-  const formattedTags = (meta.tags ?? [])
-    .map((tag) => formatTagForDisplay(tag))
-    .filter(Boolean);
-  if (formattedTags.length) chips.push(`Metatags: ${formattedTags.join(", ")}`);
-  if (meta.architecture) chips.push(`Architecture: ${meta.architecture}`);
-  if (meta.protocol) chips.push(`Protocol: ${meta.protocol}`);
-  if (meta.qScore?.total !== undefined) chips.push(`Q-Score: ${meta.qScore.total}`);
-  if (meta.compositeScore !== undefined)
-    chips.push(`Composite: ${Number(meta.compositeScore).toFixed(2)}`);
-  if (meta.feedback?.status) chips.push(`Feedback: ${meta.feedback.status}`);
-  if (meta.similarity) {
-    chips.push(`Similarity: ${meta.similarity}`);
-    if (meta.strategy === "seed-match") {
-      const similarityValue = Number.parseFloat(meta.similarity);
-      if (!Number.isNaN(similarityValue) && similarityValue < LOW_SIMILARITY_THRESHOLD) {
-        hints.push("Low similarity — consider planting more focused seeds.");
-      }
-    }
-  }
-  if (meta.similarityBreakdown) {
-    const { jaccard, tagAlignment, intentAlignment } = meta.similarityBreakdown;
-    hints.push(
-      `Composite breakdown — jaccard ${jaccard.toFixed(2)}, tag ${tagAlignment.toFixed(2)}, intent ${intentAlignment.toFixed(
-        2
-      )}.`
-    );
-  }
-  if (meta.qScore?.components) {
-    const { semantic, logical, ethics } = meta.qScore.components;
-    hints.push(`Q-Score breakdown — semantic ${semantic}, logical ${logical}, ethical ${ethics}.`);
-  }
-  if (meta.intentScores) {
-    const intentHint = INTENT_CLASSES.map((intent) => {
-      const score = Number(meta.intentScores[intent] ?? 0);
-      return `${intent} ${score.toFixed(2)}`;
-    }).join(" · ");
-    hints.push(`Intent probabilities — ${intentHint}.`);
-  }
-  if (meta.summary) {
-    hints.push(
-      `Learning triad — learning: ${meta.summary.learning}; concept: ${meta.summary.concept}; intent: ${meta.summary.intent}.`
-    );
-  }
-  if (meta.feedback?.status === "satisfied" && meta.feedback?.promoted) {
-    hints.push("Successful tags promoted to seed metadata.");
-  }
-  if (meta.feedback?.status === "unsatisfied") {
-    hints.push("Caretaker marked this reply for follow-up refinement.");
-  }
-  const chipMarkup = chips.map((chip) => `<span class="message__chip">${chip}</span>`).join(" ");
-  const hintMarkup = hints.map((hint) => `<span class="message__hint">${hint}</span>`).join(" ");
-  return [chipMarkup, hintMarkup].filter(Boolean).join(" ");
-}
-
-function buildFeedbackControls(message) {
-  if (!message?.id) return null;
-  const feedback = normalizeFeedback(message.meta?.feedback, "garden");
-  const wrapper = document.createElement("div");
-  wrapper.className = "feedback-toggle";
-
-  const label = document.createElement("span");
-  label.className = "feedback-toggle__label";
-  label.textContent = "Caretaker feedback";
-  wrapper.appendChild(label);
-
-  const satisfiedBtn = document.createElement("button");
-  satisfiedBtn.type = "button";
-  satisfiedBtn.className = "feedback-toggle__btn";
-  satisfiedBtn.dataset.feedbackTarget = message.id;
-  satisfiedBtn.dataset.feedbackValue = "satisfied";
-  satisfiedBtn.textContent = "Satisfied";
-  if (feedback.status === "satisfied") {
-    satisfiedBtn.classList.add("is-active");
-  }
-  wrapper.appendChild(satisfiedBtn);
-
-  const refineBtn = document.createElement("button");
-  refineBtn.type = "button";
-  refineBtn.className = "feedback-toggle__btn";
-  refineBtn.dataset.feedbackTarget = message.id;
-  refineBtn.dataset.feedbackValue = "unsatisfied";
-  refineBtn.textContent = "Needs refinement";
-  if (feedback.status === "unsatisfied") {
-    refineBtn.classList.add("is-active");
-  }
-  wrapper.appendChild(refineBtn);
-
-  const status = document.createElement("span");
-  status.className = "feedback-toggle__status";
-  if (feedback.status === "satisfied") {
-    status.textContent = "Marked satisfied";
-  } else if (feedback.status === "unsatisfied") {
-    status.textContent = "Marked for refinement";
-  } else {
-    status.textContent = "Awaiting review";
-  }
-  wrapper.appendChild(status);
-
-  return wrapper;
-}
-
-function handleFeedbackClick(event) {
-  const button = event.target.closest(".feedback-toggle__btn");
-  if (!button || !ui.feed.contains(button)) return;
-  const messageId = button.dataset.feedbackTarget;
-  const value = button.dataset.feedbackValue;
-  if (!messageId || !value) return;
-  event.preventDefault();
-  recordFeedback(messageId, value === "satisfied" ? "satisfied" : "unsatisfied");
-}
-
-function recordFeedback(messageId, targetStatus) {
-  const message = state.messages.find((entry) => entry.id === messageId);
-  if (!message || message.role !== "garden") return;
-  const currentStatus = message.meta?.feedback?.status ?? "pending";
-  const nextStatus = currentStatus === targetStatus ? "pending" : targetStatus;
-  const feedback = normalizeFeedback(message.meta?.feedback, "garden");
-  feedback.status = nextStatus;
-  feedback.satisfied = nextStatus === "satisfied" ? true : nextStatus === "unsatisfied" ? false : null;
-  feedback.updatedAt = new Date().toISOString();
-  if (nextStatus !== "satisfied") {
-    feedback.promoted = false;
-    feedback.promotedAt = null;
-  }
-  message.meta = {
-    ...message.meta,
-    feedback,
-  };
-
-  const promoted = nextStatus === "satisfied" ? promoteSuccessfulTags() : false;
-  if (promoted) {
-    message.meta.feedback = normalizeFeedback(message.meta.feedback, "garden");
-  }
-  refreshMetrics();
-  renderAll();
-  saveState();
 }
 
 function startPromotionJob() {
