@@ -581,10 +581,52 @@ function synthesizeResponse(content, creativity) {
   const intentProfile = scoreIntentProbabilities(content, tags);
   const match = findBestSeed({ tokens, tags, intentProfile });
   const creativityFactor = creativity / 100;
-  const tone = creativityFactor > 0.6 ? "imaginative" : creativityFactor > 0.3 ? "reflective" : "grounded";
+  const tone =
+    creativityFactor > 0.6 ? "imaginative" : creativityFactor > 0.3 ? "reflective" : "grounded";
+
+  const echoCandidate =
+    match && shouldUseWordEcho(match.seed, content, match.metrics)
+      ? match
+      : findWordEchoSeed({ content, tokens, tags, intentProfile });
+
+  if (echoCandidate) {
+    echoCandidate.seed.uses = (echoCandidate.seed.uses || 0) + 1;
+    const similarity = Number(echoCandidate.metrics.jaccard ?? 0);
+    const qScore = buildQScore({
+      strategy: "seed-match",
+      tags,
+      seed: echoCandidate.seed,
+      similarity,
+      composite: echoCandidate.score,
+      intentConfidence: intentProfile.confidence,
+    });
+    const meta = {
+      strategy: "seed-match",
+      usedSeedId: echoCandidate.seed.id,
+      similarity: similarity.toFixed(2),
+      compositeScore: echoCandidate.score.toFixed(2),
+      similarityBreakdown: echoCandidate.metrics,
+      tone,
+      persona: personality.name,
+      channel: personality.channels[tone],
+      drift: Math.round(creativityFactor * 100),
+      tags,
+      intent: intentProfile.intent,
+      intentConfidence: intentProfile.confidence,
+      intentScores: intentProfile.probabilities,
+      protocol: qScore.protocol,
+      qScore,
+      responseMode: "echo",
+    };
+    meta.summary = distillResponseSummary(meta);
+    return {
+      text: formatWordEchoResponse(echoCandidate.seed.response),
+      meta,
+    };
+  }
 
   if (match) {
-    match.seed.uses += 1;
+    match.seed.uses = (match.seed.uses || 0) + 1;
     const qScore = buildQScore({
       strategy: "seed-match",
       tags,
@@ -594,33 +636,23 @@ function synthesizeResponse(content, creativity) {
       intentConfidence: intentProfile.confidence,
     });
     const meta = {
-        strategy: "seed-match",
-        usedSeedId: match.seed.id,
-        similarity: match.metrics.jaccard.toFixed(2),
-        compositeScore: match.score.toFixed(2),
-        similarityBreakdown: match.metrics,
-        tone,
-        persona: personality.name,
-        channel: personality.channels[tone],
-        drift: Math.round(creativityFactor * 100),
-        tags,
-        intent: intentProfile.intent,
-        intentConfidence: intentProfile.confidence,
-        intentScores: intentProfile.probabilities,
-        protocol: qScore.protocol,
-        qScore,
-      };
-    const useWordEcho = shouldUseWordEcho(match.seed, content, match.metrics);
-    if (useWordEcho) {
-      meta.responseMode = "echo";
-    }
+      strategy: "seed-match",
+      usedSeedId: match.seed.id,
+      similarity: match.metrics.jaccard.toFixed(2),
+      compositeScore: match.score.toFixed(2),
+      similarityBreakdown: match.metrics,
+      tone,
+      persona: personality.name,
+      channel: personality.channels[tone],
+      drift: Math.round(creativityFactor * 100),
+      tags,
+      intent: intentProfile.intent,
+      intentConfidence: intentProfile.confidence,
+      intentScores: intentProfile.probabilities,
+      protocol: qScore.protocol,
+      qScore,
+    };
     meta.summary = distillResponseSummary(meta);
-    if (useWordEcho) {
-      return {
-        text: formatWordEchoResponse(match.seed.response),
-        meta,
-      };
-    }
     const blended = blendSeedResponse(match.seed.response, content, creativityFactor);
     return {
       text: infusePersonality(blended, tone, creativityFactor, qScore),
@@ -855,6 +887,38 @@ function computeTagWeight(term, position, size, weighting = {}) {
   return Number(raw.toFixed(4));
 }
 
+function evaluateSeedMatch(seed, { tokens = [], userTags = [], intentProfile }) {
+  const seedTokens = tokenize(`${seed.prompt ?? ""} ${seed.response ?? ""}`);
+  const jaccard = jaccardSimilarity(tokens, seedTokens);
+  const tagAlignment = computeTagAlignment(userTags, seed.tags);
+  const seedIntentProfile =
+    seed.intentProfile && seed.intentProfile.probabilities
+      ? seed.intentProfile
+      : scoreIntentProbabilities(`${seed.prompt ?? ""} ${seed.response ?? ""}`, seed.tags);
+
+  if (!seed.intentProfile || !seed.intentProfile.probabilities) {
+    seed.intentProfile = seedIntentProfile;
+  }
+
+  const intentAlignment = computeIntentAlignment(intentProfile, seedIntentProfile);
+  const topConfidence = intentProfile?.confidence ?? 0;
+  const fuzzyBase = jaccard * 0.5 + tagAlignment * 0.3 + intentAlignment * 0.2;
+  const composite = Math.min(1, fuzzyBase * (0.7 + 0.3 * topConfidence));
+
+  const metrics = {
+    jaccard: Number(jaccard.toFixed(3)),
+    tagAlignment: Number(tagAlignment.toFixed(3)),
+    intentAlignment: Number(intentAlignment.toFixed(3)),
+    confidence: Number((topConfidence || 0).toFixed(3)),
+  };
+
+  return {
+    seed,
+    score: Number(composite.toFixed(4)),
+    metrics,
+  };
+}
+
 function findBestSeed({ tokens = [], tags = [], intentProfile }) {
   if (!state.seeds.length) return null;
 
@@ -862,35 +926,29 @@ function findBestSeed({ tokens = [], tags = [], intentProfile }) {
   let best = null;
 
   for (const seed of state.seeds) {
-    const seedTokens = tokenize(seed.prompt + " " + seed.response);
-    const jaccard = jaccardSimilarity(tokens, seedTokens);
-    const tagAlignment = computeTagAlignment(userTags, seed.tags);
-    const seedIntentProfile =
-      seed.intentProfile && seed.intentProfile.probabilities
-        ? seed.intentProfile
-        : scoreIntentProbabilities(`${seed.prompt} ${seed.response}`, seed.tags);
-    if (!seed.intentProfile || !seed.intentProfile.probabilities) {
-      seed.intentProfile = seedIntentProfile;
-    }
-
-    const intentAlignment = computeIntentAlignment(intentProfile, seedIntentProfile);
-    const topConfidence = intentProfile?.confidence ?? 0;
-    const fuzzyBase = jaccard * 0.5 + tagAlignment * 0.3 + intentAlignment * 0.2;
-    const composite = Number((Math.min(1, fuzzyBase * (0.7 + 0.3 * topConfidence))).toFixed(4));
-
-    const metrics = {
-      jaccard: Number(jaccard.toFixed(3)),
-      tagAlignment: Number(tagAlignment.toFixed(3)),
-      intentAlignment: Number(intentAlignment.toFixed(3)),
-      confidence: Number((topConfidence || 0).toFixed(3)),
-    };
-
-    if (!best || composite > best.score) {
-      best = { seed, score: composite, metrics };
+    const result = evaluateSeedMatch(seed, { tokens, userTags, intentProfile });
+    if (!best || result.score > best.score) {
+      best = result;
     }
   }
 
   return best;
+}
+
+function findWordEchoSeed({ content, tokens = [], tags = [], intentProfile }) {
+  if (!state.seeds.length || !content) return null;
+  const normalized = normalizeForWordEcho(content);
+  if (!normalized) return null;
+
+  const userTags = normalizeTagCollection(tags);
+  for (const seed of state.seeds) {
+    const result = evaluateSeedMatch(seed, { tokens, userTags, intentProfile });
+    if (shouldUseWordEcho(result.seed, content, result.metrics)) {
+      return result;
+    }
+  }
+
+  return null;
 }
 
 function computeTagAlignment(userTags = [], seedTags = []) {
