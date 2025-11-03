@@ -575,11 +575,25 @@ function addMessage(role, content, meta = {}) {
   refreshStreak();
 }
 
+function isStrongSeedMatch(match) {
+  if (!match) return false;
+  const composite = typeof match.score === "number" ? match.score : null;
+  const jaccard = typeof match.metrics?.jaccard === "number" ? match.metrics.jaccard : null;
+  if (jaccard !== null) {
+    return jaccard >= LOW_SIMILARITY_THRESHOLD;
+  }
+  if (composite !== null) {
+    return composite >= LOW_SIMILARITY_THRESHOLD;
+  }
+  return false;
+}
+
 function synthesizeResponse(content, creativity) {
   const tokens = tokenize(content);
   const tags = deriveTags(content);
   const intentProfile = scoreIntentProbabilities(content, tags);
-  const match = findBestSeed({ tokens, tags, intentProfile });
+  const rawMatch = findBestSeed({ tokens, tags, intentProfile });
+  const match = isStrongSeedMatch(rawMatch) ? rawMatch : null;
   const creativityFactor = creativity / 100;
   const tone =
     creativityFactor > 0.6 ? "imaginative" : creativityFactor > 0.3 ? "reflective" : "grounded";
