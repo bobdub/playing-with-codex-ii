@@ -236,13 +236,18 @@ function bootstrap() {
 }
 
 function wireEvents() {
-  if (ui.composer && ui.messageInput && ui.creativity) {
+  if (ui.composer && ui.messageInput) {
     ui.composer.addEventListener("submit", (event) => {
       event.preventDefault();
       const content = ui.messageInput.value.trim();
       if (!content) return;
 
-      const creativity = Number(ui.creativity.value);
+      const creativityControl = ui.creativity;
+      const creativity = Number(
+        creativityControl && Number.isFinite(Number(creativityControl.value))
+          ? creativityControl.value
+          : 60
+      );
       addMessage("user", content, buildUserMeta(content, creativity));
       const reply = synthesizeResponse(content, creativity);
       addMessage("garden", reply.text, reply.meta);
