@@ -57,6 +57,15 @@ const STOPWORDS = new Set([
   "your",
 ]);
 
+const LEMMA_OVERRIDES = {
+  stories: "story",
+  memories: "memory",
+  caretakers: "caretaker",
+  gardens: "garden",
+  seeds: "seed",
+  replies: "reply",
+};
+
 function mergeDeep(base = {}, overrides = {}) {
   const result = Array.isArray(base) ? [...base] : { ...base };
   if (!overrides || typeof overrides !== "object") return result;
@@ -565,6 +574,9 @@ function synthesizeResponse(content, creativity) {
       strategy: "seed-match",
       tags,
       seed: match.seed,
+      similarity: match.metrics.jaccard,
+      composite: match.score,
+      intentConfidence: intentProfile.confidence,
     });
     const meta = {
         strategy: "seed-match",
@@ -600,6 +612,7 @@ function synthesizeResponse(content, creativity) {
   const qScore = buildQScore({
     strategy: "fallback",
     tags,
+    intentConfidence: intentProfile.confidence,
   });
 
   const meta = {
@@ -621,15 +634,6 @@ function synthesizeResponse(content, creativity) {
     meta,
   };
 }
-
-const LEMMA_OVERRIDES = {
-  stories: "story",
-  memories: "memory",
-  caretakers: "caretaker",
-  gardens: "garden",
-  seeds: "seed",
-  replies: "reply",
-};
 
 function tokenize(text) {
   return text
@@ -792,6 +796,39 @@ function renderMessages() {
     return;
   }
   const template = document.getElementById("message-template");
+  if (!template || !template.content) {
+    console.warn(
+      "Chat garden: missing #message-template markup. Rendering messages with a fallback element."
+    );
+    visibleMessages.forEach((message) => {
+      const article = document.createElement("article");
+      article.className = `message message--${message.role}`;
+      article.dataset.messageId = message.id || "";
+
+      const header = document.createElement("header");
+      header.className = "message__meta";
+      const author = document.createElement("span");
+      author.className = "message__author";
+      author.textContent =
+        message.role === "garden" ? "Garden" : message.role === "system" ? "System" : "Caretaker";
+      const timestamp = document.createElement("span");
+      timestamp.className = "message__timestamp";
+      timestamp.textContent = formatRelativeTime(message.createdAt);
+      header.appendChild(author);
+      header.appendChild(timestamp);
+
+      const body = document.createElement("div");
+      body.className = "message__content";
+      body.textContent = message.content || "";
+
+      article.appendChild(header);
+      article.appendChild(body);
+      ui.feed.appendChild(article);
+    });
+    ui.feed.scrollTop = ui.feed.scrollHeight;
+    return;
+  }
+
   visibleMessages.forEach((message) => {
     const node = template.content.cloneNode(true);
     const article = node.querySelector(".message");
@@ -921,40 +958,115 @@ function formatTagForDisplay(tag) {
   return suffix ? `${normalized.term} (${suffix})` : normalized.term;
 }
 
-const BASE_Q_SCORE = 0.0001 * Math.E;
-const LOCAL_DATA_FACTOR = 0.00005;
+function clamp(value, min = 0, max = 1) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+}
 
-function buildQScore({ strategy, tags = [], seed = null }) {
-  const localSeeds = state.seeds.length;
-  const localMessages = Math.max(0, state.messages.length - 1);
-  const localDataContribution = Math.log1p(localSeeds + localMessages) * LOCAL_DATA_FACTOR;
+function computeConversationDepth() {
+  const metrics = state.metrics || {};
+  const totalMessages = metrics.totalMessages || 0;
+  const userMessages = metrics.userMessages || 0;
+  const taggedPrompts = metrics.taggedPrompts || 0;
+  const uniqueTagCount = Object.keys(metrics.tagCounts || {}).length;
+  const seedCount = state.seeds.length;
 
-  const pairBonus = strategy === "seed-match" ? 0.001 : 0;
+  const messageSignal = totalMessages ? clamp(Math.log1p(totalMessages) / 5) : 0;
+  const taggedPromptSignal = userMessages ? clamp(taggedPrompts / userMessages) : 0;
+  const taxonomySignal = totalMessages ? clamp(uniqueTagCount / Math.max(1, totalMessages)) : 0;
+  const seedSignal = totalMessages ? clamp(seedCount / Math.max(1, totalMessages)) : clamp(seedCount / 10);
 
-  const relevantTags = extractTagTerms(tags);
-  const seedTags = extractTagTerms(seed?.tags ?? []);
-  const tagAlignment =
-    relevantTags.length > 0 &&
-    (seedTags.length
-      ? seedTags.some((tag) => relevantTags.includes(tag))
-      : state.seeds.some((existing) =>
-          extractTagTerms(existing.tags).some((tag) => relevantTags.includes(tag))
-        ));
-  const tagBonus = tagAlignment ? 0.001 : 0;
+  return clamp((messageSignal + taggedPromptSignal + taxonomySignal + seedSignal) / 4);
+}
 
-  const semanticScore = BASE_Q_SCORE + localDataContribution + pairBonus;
-  const logicalScore = BASE_Q_SCORE + localDataContribution;
-  const ethicsScore = BASE_Q_SCORE + localDataContribution + tagBonus;
+function computeMetadataDensity(tags = []) {
+  const normalized = normalizeTagCollection(tags);
+  if (!normalized.length) return 0;
+  const maxTags = gardenConfig?.tagging?.maxTags ?? 5;
+  const uniqueTerms = new Set(normalized.map((tag) => tag.term)).size;
+  const weightSum = normalized.reduce((sum, tag) => sum + (tag.weight || 1), 0);
+  const lengthSignal = clamp(normalized.length / Math.max(1, maxTags));
+  const weightSignal = clamp(weightSum / Math.max(1, maxTags * 2));
+  const uniquenessSignal = clamp(uniqueTerms / Math.max(1, maxTags));
+  return clamp((lengthSignal + weightSignal + uniquenessSignal) / 3);
+}
 
-  const totalValue = BASE_Q_SCORE + localDataContribution + pairBonus + tagBonus;
-  const total = Number(totalValue.toFixed(6));
+function computeLedgerFamiliarity(tags = []) {
+  const normalized = normalizeTagCollection(tags);
+  if (!normalized.length) return 0;
+  const tagCounts = state.metrics?.tagCounts || {};
+  const recognized = normalized.filter((tag) => tagCounts[tag.term]).length;
+  return clamp(recognized / normalized.length);
+}
+
+function computeFeedbackSignal() {
+  const feedback = state.metrics?.feedback;
+  if (!feedback) return 0;
+  const satisfied = Number(feedback.satisfied || 0);
+  const unsatisfied = Number(feedback.unsatisfied || 0);
+  const pending = Number(feedback.pending || 0);
+  const total = satisfied + unsatisfied + pending;
+  if (!total) return 0;
+  const positive = satisfied / total;
+  const refinementPenalty = unsatisfied / total;
+  return clamp(positive - refinementPenalty * 0.5);
+}
+
+function computeSeedAlignment(tags = [], seed = null) {
+  if (!seed || !seed.tags) return 0;
+  return clamp(computeTagAlignment(tags, seed.tags));
+}
+
+function computeSuccessRate(strategy) {
+  const stats = state.metrics?.seedMatchSuccess;
+  if (!stats || !stats.total) {
+    return strategy === "seed-match" ? 0.5 : 0;
+  }
+  return clamp(stats.matches / stats.total);
+}
+
+function buildQScore({
+  strategy,
+  tags = [],
+  seed = null,
+  similarity = null,
+  composite = null,
+  intentConfidence = null,
+}) {
+  const normalizedTags = normalizeTagCollection(tags);
+  const depth = computeConversationDepth();
+  const metadataDensity = computeMetadataDensity(normalizedTags);
+  const ledgerFamiliarity = computeLedgerFamiliarity(normalizedTags);
+  const alignment = computeSeedAlignment(normalizedTags, seed) || ledgerFamiliarity;
+  const successRate = computeSuccessRate(strategy);
+  const stability = clamp(
+    Number.isFinite(composite)
+      ? composite
+      : Number.isFinite(similarity)
+      ? similarity
+      : 0
+  );
+  const intentSignal = clamp(Number(intentConfidence ?? 0));
+  const feedbackSignal = computeFeedbackSignal();
+
+  const semanticScore = clamp(
+    metadataDensity * 0.6 + ledgerFamiliarity * 0.2 + depth * 0.2
+  );
+  const logicalScore = clamp(
+    successRate * 0.4 + Math.max(stability, intentSignal) * 0.4 + depth * 0.2
+  );
+  const ethicsScore = clamp(feedbackSignal * 0.4 + alignment * 0.4 + depth * 0.2);
+
+  const total = clamp((semanticScore + logicalScore + ethicsScore) / 3);
+
+  const toComponent = (value) => value.toFixed(6);
 
   return {
     total: total.toFixed(6),
     components: {
-      semantic: semanticScore.toFixed(6),
-      logical: logicalScore.toFixed(6),
-      ethics: ethicsScore.toFixed(6),
+      semantic: toComponent(semanticScore),
+      logical: toComponent(logicalScore),
+      ethics: toComponent(ethicsScore),
     },
     protocol: "Infinity & Beyond",
     strategy,
