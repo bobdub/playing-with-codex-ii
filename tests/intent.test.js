@@ -9,6 +9,7 @@ import {
   deriveTags,
   normalizeTagCollection,
   INTENT_CLASSES,
+  shouldUseWordEcho,
 } from '../docs/app.js';
 
 test('scoreIntentProbabilities emphasizes inquiry prompts', () => {
@@ -67,4 +68,20 @@ test('deriveTags extracts weighted keywords and phrases', () => {
 
 test('intent classes remain complete', () => {
   assert.deepEqual(INTENT_CLASSES.sort(), ['inquiry', 'planning', 'reflection', 'signal'].sort());
+});
+
+test('shouldUseWordEcho returns true for identical learned word seeds', () => {
+  const seed = { prompt: 'Hello', response: 'hello' };
+  assert.equal(shouldUseWordEcho(seed, 'hello', { jaccard: 1 }), true);
+});
+
+test('shouldUseWordEcho rejects non-matching or multiword seeds', () => {
+  const multiwordSeed = { prompt: 'hello there', response: 'hello there' };
+  assert.equal(shouldUseWordEcho(multiwordSeed, 'hello there', { jaccard: 1 }), false);
+
+  const mismatchSeed = { prompt: 'hello', response: 'hola' };
+  assert.equal(shouldUseWordEcho(mismatchSeed, 'hello', { jaccard: 1 }), false);
+
+  const lowMatchSeed = { prompt: 'hello', response: 'hello' };
+  assert.equal(shouldUseWordEcho(lowMatchSeed, 'hello', { jaccard: 0.8 }), false);
 });
