@@ -55,7 +55,7 @@
             <div>
               <h2 id="chat-title">Conversation stream</h2>
               <p class="panel__subtitle">
-                Capture dialogue and watch how the garden adapts with every exchange.
+                Share a thought with the garden and watch Ψ_Infinity answer in the stream below.
               </p>
             </div>
             <div class="panel__actions">
@@ -63,7 +63,12 @@
               <button class="ghost" id="export-data" type="button">Export data</button>
             </div>
           </div>
-          <div class="messages" id="message-feed" aria-live="polite"></div>
+          <div class="messages" id="message-feed" aria-live="polite">
+            <div class="messages__empty" id="messages-empty">
+              <h3>Ready when you are</h3>
+              <p>Send a message to begin the dialogue. Garden replies appear directly in this stream.</p>
+            </div>
+          </div>
           <form class="composer" id="composer" autocomplete="off">
             <label class="composer__label" for="message-input">Message the garden</label>
             <textarea
@@ -168,13 +173,12 @@
     <template id="message-template">
       <article class="message">
         <div class="message__avatar" data-role></div>
-        <div class="message__body">
+        <div class="message__bubble">
           <header class="message__meta">
             <span class="message__author" data-author></span>
             <span class="message__timestamp" data-timestamp></span>
           </header>
-          <p class="message__content" data-content></p>
-          <footer class="message__footer" data-footer></footer>
+          <div class="message__content" data-content></div>
         </div>
       </article>
     </template>
