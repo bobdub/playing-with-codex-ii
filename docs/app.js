@@ -226,81 +226,96 @@ function bootstrap() {
 }
 
 function wireEvents() {
-  ui.composer.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const content = ui.messageInput.value.trim();
-    if (!content) return;
+  if (ui.composer && ui.messageInput && ui.creativity) {
+    ui.composer.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const content = ui.messageInput.value.trim();
+      if (!content) return;
 
-    const creativity = Number(ui.creativity.value);
-    addMessage("user", content, buildUserMeta(content, creativity));
-    const reply = synthesizeResponse(content, creativity);
-    addMessage("garden", reply.text, reply.meta);
-    ui.messageInput.value = "";
-    ui.messageInput.focus();
-    renderAll();
-    saveState();
-  });
-
-  ui.seedForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const prompt = ui.seedPrompt.value.trim();
-    const response = ui.seedResponse.value.trim();
-    if (!prompt || !response) return;
-
-    const tags = normalizeTagCollection(
-      ui.seedTags.value
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean)
-        .map((term) => ({ term, kind: "seed", weight: 1 }))
-    );
-
-    const seed = {
-      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-      prompt,
-      response,
-      tags,
-      createdAt: new Date().toISOString(),
-      uses: 0,
-      intentProfile: scoreIntentProbabilities(`${prompt} ${response}`, tags),
-    };
-
-    state.seeds.unshift(seed);
-    ui.seedForm.reset();
-    refreshMetrics();
-    renderAll();
-    saveState();
-  });
-
-  ui.clearBtn.addEventListener("click", () => {
-    if (state.messages.length <= 1) return;
-    if (!confirm("Clear the conversation history?")) return;
-    state.messages = state.messages.filter((msg) => msg.role === "system");
-    state.metrics.totalMessages = state.messages.length;
-    state.metrics.userMessages = 0;
-    state.metrics.gardenMessages = 0;
-    state.metrics.seedUses = 0;
-    refreshMetrics();
-    renderAll();
-    saveState();
-  });
-
-  ui.exportBtn.addEventListener("click", () => {
-    const payload = {
-      generatedAt: new Date().toISOString(),
-      state,
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: "application/json",
+      const creativity = Number(ui.creativity.value);
+      addMessage("user", content, buildUserMeta(content, creativity));
+      const reply = synthesizeResponse(content, creativity);
+      addMessage("garden", reply.text, reply.meta);
+      ui.messageInput.value = "";
+      ui.messageInput.focus();
+      renderAll();
+      saveState();
     });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `chat-garden-export-${Date.now()}.json`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  });
+  }
 
-  ui.feed.addEventListener("click", handleFeedbackClick);
+  if (ui.seedForm && ui.seedPrompt && ui.seedResponse && ui.seedTags) {
+    ui.seedForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const prompt = ui.seedPrompt.value.trim();
+      const response = ui.seedResponse.value.trim();
+      if (!prompt || !response) return;
+
+      const tags = normalizeTagCollection(
+        ui.seedTags.value
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean)
+          .map((term) => ({ term, kind: "seed", weight: 1 }))
+      );
+
+      const seedId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `seed-${Date.now()}`;
+
+      const seed = {
+        id: seedId,
+        prompt,
+        response,
+        tags,
+        createdAt: new Date().toISOString(),
+        uses: 0,
+        intentProfile: scoreIntentProbabilities(`${prompt} ${response}`, tags),
+      };
+
+      state.seeds.unshift(seed);
+      ui.seedForm.reset();
+      refreshMetrics();
+      renderAll();
+      saveState();
+    });
+  }
+
+  if (ui.clearBtn) {
+    ui.clearBtn.addEventListener("click", () => {
+      if (state.messages.length <= 1) return;
+      if (!confirm("Clear the conversation history?")) return;
+      state.messages = state.messages.filter((msg) => msg.role === "system");
+      state.metrics.totalMessages = state.messages.length;
+      state.metrics.userMessages = 0;
+      state.metrics.gardenMessages = 0;
+      state.metrics.seedUses = 0;
+      refreshMetrics();
+      renderAll();
+      saveState();
+    });
+  }
+
+  if (ui.exportBtn) {
+    ui.exportBtn.addEventListener("click", () => {
+      const payload = {
+        generatedAt: new Date().toISOString(),
+        state,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: "application/json",
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `chat-garden-export-${Date.now()}.json`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    });
+  }
+
+  if (ui.feed) {
+    ui.feed.addEventListener("click", handleFeedbackClick);
+  }
 }
 
 function ensureSystemIntro() {
