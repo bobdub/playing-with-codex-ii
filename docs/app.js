@@ -585,7 +585,6 @@ function synthesizeResponse(content, creativity) {
 
   if (match) {
     match.seed.uses += 1;
-    const blended = blendSeedResponse(match.seed.response, content, creativityFactor);
     const qScore = buildQScore({
       strategy: "seed-match",
       tags,
@@ -611,7 +610,18 @@ function synthesizeResponse(content, creativity) {
         protocol: qScore.protocol,
         qScore,
       };
+    const useWordEcho = shouldUseWordEcho(match.seed, content, match.metrics);
+    if (useWordEcho) {
+      meta.responseMode = "echo";
+    }
     meta.summary = distillResponseSummary(meta);
+    if (useWordEcho) {
+      return {
+        text: formatWordEchoResponse(match.seed.response),
+        meta,
+      };
+    }
+    const blended = blendSeedResponse(match.seed.response, content, creativityFactor);
     return {
       text: infusePersonality(blended, tone, creativityFactor, qScore),
       meta,
@@ -937,6 +947,36 @@ function blendSeedResponse(seedResponse, prompt, creativityFactor) {
   ];
   const reflection = reflections[Math.floor(creativityFactor * reflections.length) % reflections.length];
   return `${seedResponse}\n\n<small>${reflection}</small>`;
+}
+
+function normalizeForWordEcho(text) {
+  return String(text ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function shouldUseWordEcho(seed, userContent, metrics = {}) {
+  if (!seed) return false;
+  const prompt = normalizeForWordEcho(seed.prompt);
+  const response = normalizeForWordEcho(seed.response);
+  const user = normalizeForWordEcho(userContent);
+  if (!prompt || !response || !user) return false;
+  if (prompt.includes(" ") || response.includes(" ")) return false;
+  if (prompt !== response) return false;
+  if (user !== prompt) return false;
+  const jaccardScore = typeof metrics?.jaccard === "number" ? metrics.jaccard : null;
+  if (jaccardScore !== null && jaccardScore < 0.999) {
+    return false;
+  }
+  return true;
+}
+
+function formatWordEchoResponse(response) {
+  const text = String(response ?? "");
+  const trimmed = text.trim();
+  return trimmed || text;
 }
 
 function infusePersonality(text, tone, creativityFactor, qScore) {
@@ -1841,5 +1881,6 @@ export {
   createTag,
   mergeDeep,
   INTENT_CLASSES,
+  shouldUseWordEcho,
 };
 
