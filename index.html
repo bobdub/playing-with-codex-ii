@@ -23,64 +23,78 @@
     </div>
     <div class="aurora" aria-hidden="true"></div>
     <div class="app-shell">
-      <header class="hero">
+      <div class="cockpit-frame" aria-hidden="true">
+        <span class="cockpit-frame__segment cockpit-frame__segment--top"></span>
+        <span class="cockpit-frame__segment cockpit-frame__segment--bottom"></span>
+        <span class="cockpit-frame__segment cockpit-frame__segment--left"></span>
+        <span class="cockpit-frame__segment cockpit-frame__segment--right"></span>
+      </div>
+      <header class="hero hero--cockpit">
         <div class="hero__content">
-          <p class="hero__eyebrow">Project Kickoff · Local-first neural garden</p>
-          <h1>Chat Garden LLM</h1>
+          <p class="hero__eyebrow">Starship Initiative · Quantum Bridge Ops</p>
+          <h1>Cosmic Command Console</h1>
           <p class="hero__lede">
-            Plant the foundation for a self-learning assistant that blossoms directly
-            in the browser. Curate seeds of knowledge, observe live metrics, and
-            let Ψ_Infinity synthesize luminous replies from the stories you store.
+            Take the helm of the Ψ_Infinity starship. Route transmissions to the
+            LLM core, guide its learning banks, and watch real-time telemetry stream
+            across the bridge as new intel arrives.
           </p>
         </div>
         <div class="hero__status">
-          <div class="status-card">
-            <span class="status-card__label">Dataset seeds</span>
+          <div class="status-card status-card--holo">
+            <span class="status-card__label">Seed archives</span>
             <span class="status-card__value" id="seed-count">0</span>
+            <span class="status-card__scan" aria-hidden="true"></span>
           </div>
-          <div class="status-card">
-            <span class="status-card__label">Learning streak</span>
+          <div class="status-card status-card--holo">
+            <span class="status-card__label">Stellar streak</span>
             <span class="status-card__value" id="streak-count">0 days</span>
+            <span class="status-card__scan" aria-hidden="true"></span>
           </div>
-          <div class="status-card" id="last-tended-card" aria-live="polite">
-            <span class="status-card__label">Last tended</span>
+          <div class="status-card status-card--holo" id="last-tended-card" aria-live="polite">
+            <span class="status-card__label">Last transmission</span>
             <span class="status-card__value" id="last-tended">—</span>
             <span class="status-card__note" id="streak-alert" hidden></span>
+            <span class="status-card__scan" aria-hidden="true"></span>
           </div>
         </div>
+        <div class="hero__hud" aria-hidden="true">
+          <div class="hero__hud-grid"></div>
+          <div class="hero__hud-reticle"></div>
+        </div>
       </header>
-      <main class="layout">
+      <main class="layout layout--cockpit">
         <section class="panel panel--primary" aria-labelledby="chat-title">
           <div class="panel__header">
             <div>
-              <h2 id="chat-title">Conversation stream</h2>
+              <h2 id="chat-title">Command channel</h2>
               <p class="panel__subtitle">
-                Share a thought with the garden and watch Ψ_Infinity answer in the stream below.
+                Open a bridge to Ψ_Infinity’s LLM core. Issue directives, receive synthesized
+                answers, and monitor the cockpit view screen in real time.
               </p>
             </div>
             <div class="panel__actions">
-              <button class="ghost" id="clear-convo" type="button">Start fresh</button>
-              <button class="ghost" id="export-data" type="button">Export data</button>
+              <button class="ghost" id="clear-convo" type="button">Clear log</button>
+              <button class="ghost" id="export-data" type="button">Export flight log</button>
             </div>
           </div>
           <div class="messages" id="message-feed" aria-live="polite">
             <div class="messages__empty" id="messages-empty">
-              <h3>Ready when you are</h3>
-              <p>Send a message to begin the dialogue. Garden replies appear directly in this stream.</p>
+              <h3>Awaiting transmission</h3>
+              <p>Route your first signal to the bridge. Replies from Ψ_Infinity will render on this console.</p>
             </div>
           </div>
           <form class="composer" id="composer" autocomplete="off">
-            <label class="composer__label" for="message-input">Message the garden</label>
+            <label class="composer__label" for="message-input">Transmit to Ψ_Infinity</label>
             <textarea
               id="message-input"
               name="message"
               rows="3"
-              placeholder="Ask the garden what it has learned so far..."
+              placeholder="e.g. Request a status update on nearby anomalies..."
               required
             ></textarea>
             <div class="composer__footer">
               <label class="slider">
-                <span>Creative drift</span>
+                <span>Imagination thrusters</span>
                 <input
                   type="range"
                   min="0"
@@ -91,51 +105,56 @@
                   name="creativity"
                 />
               </label>
-              <button type="submit" class="primary">Grow a reply</button>
+              <button type="submit" class="primary">Send transmission</button>
             </div>
           </form>
         </section>
         <aside class="panel panel--secondary">
           <div class="panel__section" aria-labelledby="ledger-title">
-            <h2 id="ledger-title">Learning ledger</h2>
+            <h2 id="ledger-title">Training databanks</h2>
             <p class="panel__subtitle">
-              Store curated prompt-response pairs. Advanced caretakers can sculpt nuance,
-              tagging their teachings so Ψ_Infinity adapts with precision.
+              Archive exemplar exchanges for the LLM core. Senior officers can enrich entries with metadata
+              so the ship adapts to your doctrine.
             </p>
             <details class="advanced-ledger" open>
-              <summary>Advanced ledger tools</summary>
+              <summary>Advanced databank tools</summary>
               <p class="advanced-ledger__hint">
-                Capture high-fidelity seeds with rich metadata. The metatag ledger is preserved for
-                experienced caretakers who steward the garden’s evolution.
+                Capture high-fidelity seeds with rich metadata. The metatag ledger remains secured for
+                experienced navigators who steward the bridge.
               </p>
               <form class="seed-form" id="seed-form">
                 <label for="seed-prompt">Prompt</label>
-                <textarea id="seed-prompt" rows="2" placeholder="How do we welcome new caretakers?" required></textarea>
+                <textarea id="seed-prompt" rows="2" placeholder="How do we brief a new crew member?" required></textarea>
                 <label for="seed-response">Response</label>
-                <textarea id="seed-response" rows="3" placeholder="We honor curiosity, patience, and gentle iteration." required></textarea>
+                <textarea
+                  id="seed-response"
+                  rows="3"
+                  placeholder="Outline the protocol with clarity, empathy, and mission context."
+                  required
+                ></textarea>
                 <label for="seed-tags">Metadata tags</label>
-                <input id="seed-tags" type="text" placeholder="onboarding, ethics, tone" />
-                <button type="submit" class="secondary">Plant seed</button>
+                <input id="seed-tags" type="text" placeholder="onboarding, protocol, tone" />
+                <button type="submit" class="secondary">Store datapoint</button>
               </form>
             </details>
           </div>
           <div class="panel__section" aria-labelledby="metrics-title">
-            <h2 id="metrics-title">Telemetry</h2>
+            <h2 id="metrics-title">Ship telemetry</h2>
             <dl class="metrics" id="metrics">
               <div>
-                <dt>Total messages</dt>
+                <dt>Total transmissions</dt>
                 <dd data-stat="total-messages">0</dd>
               </div>
               <div>
-                <dt>User inputs</dt>
+                <dt>Bridge commands</dt>
                 <dd data-stat="user-messages">0</dd>
               </div>
               <div>
-                <dt>Garden replies</dt>
+                <dt>LLM replies</dt>
                 <dd data-stat="garden-messages">0</dd>
               </div>
               <div>
-                <dt>Seeded replies</dt>
+                <dt>Databank replies</dt>
                 <dd data-stat="seed-match-replies">0</dd>
               </div>
               <div>
@@ -143,7 +162,7 @@
                 <dd data-stat="fallback-replies">0</dd>
               </div>
               <div>
-                <dt>Seed reuse rate</dt>
+                <dt>Databank reuse rate</dt>
                 <dd data-stat="seed-reuse-rate">0%</dd>
               </div>
               <div>
@@ -151,7 +170,7 @@
                 <dd data-stat="tagged-prompts">0</dd>
               </div>
               <div>
-                <dt>Average seed usage</dt>
+                <dt>Average databank usage</dt>
                 <dd data-stat="avg-seed-usage">0</dd>
               </div>
               <div>
@@ -161,9 +180,9 @@
             </dl>
           </div>
           <div class="panel__section" aria-labelledby="library-title">
-            <h2 id="library-title">Seed library</h2>
+            <h2 id="library-title">Recent datapoints</h2>
             <p class="panel__subtitle">
-              Recent knowledge seeds with metadata. The garden references these when synthesizing replies.
+              Latest knowledge capsules with metadata. Ψ_Infinity references these to inform replies.
             </p>
             <ul class="seed-list" id="seed-list"></ul>
           </div>
