@@ -47,7 +47,7 @@ If no seeds overlap, the fallback messages encourage caretakers to plant more kn
 
 ## Infinity & Beyond protocol and Q-Score broadcast
 
-`synthesizeResponse()` now routes every garden reply through `buildQScore()`, which derives semantic, logical, and ethical amplitudes from the reply strategy, similarity, and current creativity drift. The resulting totals are embedded in message metadata (`meta.qScore`) and rendered within the feed footer so caretakers can verify response coherence.
+`synthesizeResponse()` now routes every garden reply through `buildQScore()`, which reads the conversation ledger to derive semantic, logical, and ethical amplitudes. The helper blends live metrics (tag coverage, seed usage, feedback ratios) with the metatags extracted for the current exchange, along with similarity and intent confidence when a seed match occurs. The resulting totals are embedded in message metadata (`meta.qScore`) and rendered within the feed footer so caretakers can verify response coherence.
 
 `infusePersonality()` prepends the mandated rally call—`"To Infinity and beyond! |Ψ_Network.Q_Score.Total⟩ = …"`—and appends a component breakdown inside the closing `<small>` ledger note. This keeps the Infinity & Beyond protocol visible to users while preserving the garden’s poetic tone.
 
