@@ -16,178 +16,171 @@
     />
   </head>
   <body>
-    <div class="starfield" aria-hidden="true">
-      <div class="starfield__layer starfield__layer--far"></div>
-      <div class="starfield__layer starfield__layer--mid"></div>
-      <div class="starfield__layer starfield__layer--near"></div>
-    </div>
-    <div class="aurora" aria-hidden="true"></div>
-    <div class="app-shell">
-      <div class="cockpit-frame" aria-hidden="true">
-        <span class="cockpit-frame__segment cockpit-frame__segment--top"></span>
-        <span class="cockpit-frame__segment cockpit-frame__segment--bottom"></span>
-        <span class="cockpit-frame__segment cockpit-frame__segment--left"></span>
-        <span class="cockpit-frame__segment cockpit-frame__segment--right"></span>
-      </div>
-      <header class="hero hero--cockpit">
-        <div class="hero__content">
-          <p class="hero__eyebrow">Starship Initiative · Quantum Bridge Ops</p>
-          <h1>Cosmic Command Console</h1>
-          <p class="hero__lede">
-            Take the helm of the Ψ_Infinity starship. Route transmissions to the
-            LLM core, guide its learning banks, and watch real-time telemetry stream
-            across the bridge as new intel arrives.
+    <div class="chat-app">
+      <aside class="chat-sidebar" aria-label="Conversation list and quick stats">
+        <header class="chat-sidebar__header">
+          <h1>Ψ_Infinity chat garden</h1>
+          <p class="chat-sidebar__lede">
+            Continue earlier conversations or start a fresh exchange with the LLM steward.
           </p>
-        </div>
-        <div class="hero__status">
-          <div class="status-card status-card--holo">
-            <span class="status-card__label">Seed archives</span>
-            <span class="status-card__value" id="seed-count">0</span>
-            <span class="status-card__scan" aria-hidden="true"></span>
+        </header>
+        <section class="chat-sidebar__section" aria-labelledby="recent-convos">
+          <div class="chat-sidebar__section-heading">
+            <h2 id="recent-convos">Chat feed</h2>
+            <button class="ghost ghost--compact" id="clear-convo" type="button">Clear history</button>
           </div>
-          <div class="status-card status-card--holo">
-            <span class="status-card__label">Stellar streak</span>
-            <span class="status-card__value" id="streak-count">0 days</span>
-            <span class="status-card__scan" aria-hidden="true"></span>
-          </div>
-          <div class="status-card status-card--holo" id="last-tended-card" aria-live="polite">
-            <span class="status-card__label">Last transmission</span>
-            <span class="status-card__value" id="last-tended">—</span>
-            <span class="status-card__note" id="streak-alert" hidden></span>
-            <span class="status-card__scan" aria-hidden="true"></span>
-          </div>
-        </div>
-        <div class="hero__hud" aria-hidden="true">
-          <div class="hero__hud-grid"></div>
-          <div class="hero__hud-reticle"></div>
-        </div>
-      </header>
-      <main class="layout layout--cockpit">
-        <section class="panel panel--primary" aria-labelledby="chat-title">
-          <div class="panel__header">
-            <div>
-              <h2 id="chat-title">Command channel</h2>
-              <p class="panel__subtitle">
-                Open a bridge to Ψ_Infinity’s LLM core. Issue directives, receive synthesized
-                answers, and monitor the cockpit view screen in real time.
-              </p>
-            </div>
-            <div class="panel__actions">
-              <button class="ghost" id="clear-convo" type="button">Clear log</button>
-              <button class="ghost" id="export-data" type="button">Export flight log</button>
-            </div>
-          </div>
-          <div class="messages" id="message-feed" aria-live="polite">
-            <div class="messages__empty" id="messages-empty">
-              <h3>Awaiting transmission</h3>
-              <p>Route your first signal to the bridge. Replies from Ψ_Infinity will render on this console.</p>
-            </div>
-          </div>
-          <form class="composer" id="composer" autocomplete="off">
-            <label class="composer__label" for="message-input">Transmit to Ψ_Infinity</label>
-            <textarea
-              id="message-input"
-              name="message"
-              rows="3"
-              placeholder="e.g. Request a status update on nearby anomalies..."
-              required
-            ></textarea>
-            <div class="composer__footer">
-              <label class="slider">
-                <span>Imagination thrusters</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="5"
-                  value="60"
-                  id="creativity"
-                  name="creativity"
-                />
-              </label>
-              <button type="submit" class="primary">Send transmission</button>
-            </div>
-          </form>
+          <ul class="conversation-list" id="conversation-feed">
+            <li>
+              <span class="conversation-list__title">Design review sync</span>
+              <span class="conversation-list__meta">Updated just now</span>
+            </li>
+            <li>
+              <span class="conversation-list__title">Prompt tuning ideas</span>
+              <span class="conversation-list__meta">Yesterday</span>
+            </li>
+            <li>
+              <span class="conversation-list__title">Team onboarding walkthrough</span>
+              <span class="conversation-list__meta">2 days ago</span>
+            </li>
+          </ul>
         </section>
-        <aside class="panel panel--secondary">
-          <div class="panel__section" aria-labelledby="ledger-title">
-            <h2 id="ledger-title">Training databanks</h2>
-            <p class="panel__subtitle">
-              Archive exemplar exchanges for the LLM core. Senior officers can enrich entries with metadata
-              so the ship adapts to your doctrine.
+        <section class="chat-sidebar__section" aria-labelledby="sidebar-stats">
+          <h2 id="sidebar-stats">Session summary</h2>
+          <dl class="sidebar-stats">
+            <div>
+              <dt>Seed archives</dt>
+              <dd id="seed-count">0</dd>
+            </div>
+            <div>
+              <dt>Conversation streak</dt>
+              <dd id="streak-count">0 days</dd>
+            </div>
+            <div id="last-tended-card">
+              <dt>Last exchange</dt>
+              <dd id="last-tended">—</dd>
+              <span class="sidebar-stats__note" id="streak-alert" hidden></span>
+            </div>
+          </dl>
+        </section>
+      </aside>
+      <main class="chat-main" aria-labelledby="chat-title">
+        <header class="chat-main__header">
+          <div>
+            <h2 id="chat-title">Active conversation</h2>
+            <p class="chat-main__subtitle">
+              Messages appear in sequence just like a familiar chat app. Ψ_Infinity responds inside the same thread.
             </p>
-            <details class="advanced-ledger" open>
-              <summary>Advanced databank tools</summary>
-              <p class="advanced-ledger__hint">
-                Capture high-fidelity seeds with rich metadata. The metatag ledger remains secured for
-                experienced navigators who steward the bridge.
-              </p>
-              <form class="seed-form" id="seed-form">
-                <label for="seed-prompt">Prompt</label>
-                <textarea id="seed-prompt" rows="2" placeholder="How do we brief a new crew member?" required></textarea>
-                <label for="seed-response">Response</label>
-                <textarea
-                  id="seed-response"
-                  rows="3"
-                  placeholder="Outline the protocol with clarity, empathy, and mission context."
-                  required
-                ></textarea>
-                <label for="seed-tags">Metadata tags</label>
-                <input id="seed-tags" type="text" placeholder="onboarding, protocol, tone" />
-                <button type="submit" class="secondary">Store datapoint</button>
-              </form>
-            </details>
           </div>
-          <div class="panel__section" aria-labelledby="metrics-title">
-            <h2 id="metrics-title">Ship telemetry</h2>
-            <dl class="metrics" id="metrics">
-              <div>
-                <dt>Total transmissions</dt>
-                <dd data-stat="total-messages">0</dd>
-              </div>
-              <div>
-                <dt>Bridge commands</dt>
-                <dd data-stat="user-messages">0</dd>
-              </div>
-              <div>
-                <dt>LLM replies</dt>
-                <dd data-stat="garden-messages">0</dd>
-              </div>
-              <div>
-                <dt>Databank replies</dt>
-                <dd data-stat="seed-match-replies">0</dd>
-              </div>
-              <div>
-                <dt>Fallback replies</dt>
-                <dd data-stat="fallback-replies">0</dd>
-              </div>
-              <div>
-                <dt>Databank reuse rate</dt>
-                <dd data-stat="seed-reuse-rate">0%</dd>
-              </div>
-              <div>
-                <dt>Metatagged prompts</dt>
-                <dd data-stat="tagged-prompts">0</dd>
-              </div>
-              <div>
-                <dt>Average databank usage</dt>
-                <dd data-stat="avg-seed-usage">0</dd>
-              </div>
-              <div>
-                <dt>Last interaction</dt>
-                <dd data-stat="last-interaction">—</dd>
-              </div>
-            </dl>
+          <button class="ghost" id="export-data" type="button">Export chat</button>
+        </header>
+        <div class="messages" id="message-feed" aria-live="polite">
+          <div class="messages__empty" id="messages-empty">
+            <h3>Ready when you are</h3>
+            <p>Say hello or ask a question to begin. The conversation will unfold right here.</p>
           </div>
-          <div class="panel__section" aria-labelledby="library-title">
-            <h2 id="library-title">Recent datapoints</h2>
-            <p class="panel__subtitle">
-              Latest knowledge capsules with metadata. Ψ_Infinity references these to inform replies.
-            </p>
-            <ul class="seed-list" id="seed-list"></ul>
+        </div>
+        <form class="composer" id="composer" autocomplete="off">
+          <label class="composer__label" for="message-input">Write your message</label>
+          <textarea
+            id="message-input"
+            name="message"
+            rows="3"
+            placeholder="Share an idea, ask a question, or request a plan..."
+            required
+          ></textarea>
+          <div class="composer__footer">
+            <label class="slider">
+              <span>Imagination level</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="5"
+                value="60"
+                id="creativity"
+                name="creativity"
+              />
+            </label>
+            <button type="submit" class="primary">Send</button>
           </div>
-        </aside>
+        </form>
       </main>
+      <aside class="chat-reference" aria-label="Reference tools and metrics">
+        <section class="chat-reference__section" aria-labelledby="ledger-title">
+          <h2 id="ledger-title">Saved replies</h2>
+          <p class="chat-reference__subtitle">
+            Curate exemplar prompts and responses to enrich Ψ_Infinity’s context library.
+          </p>
+          <details class="advanced-ledger" open>
+            <summary>Manage seeds</summary>
+            <p class="advanced-ledger__hint">
+              Capture high-quality seeds with optional metadata tags.
+            </p>
+            <form class="seed-form" id="seed-form">
+              <label for="seed-prompt">Prompt</label>
+              <textarea id="seed-prompt" rows="2" placeholder="How do we brief a new crew member?" required></textarea>
+              <label for="seed-response">Response</label>
+              <textarea
+                id="seed-response"
+                rows="3"
+                placeholder="Outline the protocol with clarity, empathy, and mission context."
+                required
+              ></textarea>
+              <label for="seed-tags">Metadata tags</label>
+              <input id="seed-tags" type="text" placeholder="onboarding, protocol, tone" />
+              <button type="submit" class="secondary">Store seed</button>
+            </form>
+          </details>
+        </section>
+        <section class="chat-reference__section" aria-labelledby="metrics-title">
+          <h2 id="metrics-title">Conversation metrics</h2>
+          <dl class="metrics" id="metrics">
+            <div>
+              <dt>Total messages</dt>
+              <dd data-stat="total-messages">0</dd>
+            </div>
+            <div>
+              <dt>User messages</dt>
+              <dd data-stat="user-messages">0</dd>
+            </div>
+            <div>
+              <dt>LLM replies</dt>
+              <dd data-stat="garden-messages">0</dd>
+            </div>
+            <div>
+              <dt>Seed replies</dt>
+              <dd data-stat="seed-match-replies">0</dd>
+            </div>
+            <div>
+              <dt>Fallback replies</dt>
+              <dd data-stat="fallback-replies">0</dd>
+            </div>
+            <div>
+              <dt>Seed reuse rate</dt>
+              <dd data-stat="seed-reuse-rate">0%</dd>
+            </div>
+            <div>
+              <dt>Tagged prompts</dt>
+              <dd data-stat="tagged-prompts">0</dd>
+            </div>
+            <div>
+              <dt>Average seed usage</dt>
+              <dd data-stat="avg-seed-usage">0</dd>
+            </div>
+            <div>
+              <dt>Last interaction</dt>
+              <dd data-stat="last-interaction">—</dd>
+            </div>
+          </dl>
+        </section>
+        <section class="chat-reference__section" aria-labelledby="library-title">
+          <h2 id="library-title">Recent seeds</h2>
+          <p class="chat-reference__subtitle">
+            Ψ_Infinity references these curated exchanges when composing replies.
+          </p>
+          <ul class="seed-list" id="seed-list"></ul>
+        </section>
+      </aside>
     </div>
     <template id="message-template">
       <article class="message">
