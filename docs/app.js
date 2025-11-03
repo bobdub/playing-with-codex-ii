@@ -165,6 +165,508 @@ function extractTagTerms(collection) {
 
 const INTENT_CLASSES = ["inquiry", "planning", "reflection", "signal"];
 
+function sigmoid(value) {
+  const clamped = Math.max(-20, Math.min(20, value));
+  return 1 / (1 + Math.exp(-clamped));
+}
+
+function softmax(values = []) {
+  if (!values.length) return [];
+  const max = Math.max(...values);
+  const exps = values.map((value) => Math.exp(value - max));
+  const sum = exps.reduce((total, value) => total + value, 0) || 1;
+  return exps.map((value) => value / sum);
+}
+
+function normalizeVector(vector = []) {
+  const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+  if (!magnitude) return vector.slice();
+  return vector.map((value) => value / magnitude);
+}
+
+function cosineSimilarity(a = [], b = []) {
+  if (!a.length || !b.length || a.length !== b.length) return 0;
+  let dot = 0;
+  let magA = 0;
+  let magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    const av = a[i];
+    const bv = b[i];
+    dot += av * bv;
+    magA += av * av;
+    magB += bv * bv;
+  }
+  if (!magA || !magB) return 0;
+  return dot / Math.sqrt(magA * magB);
+}
+
+function hashToIndex(term, size) {
+  if (!term || !size) return 0;
+  let hash = 0;
+  for (let i = 0; i < term.length; i++) {
+    hash = (hash << 5) - hash + term.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % size;
+}
+
+function stripHtml(value = "") {
+  return String(value).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+}
+
+class Memory {
+  constructor(namespace = "LLM_Memory") {
+    this.namespace = namespace;
+    this.store = new Map();
+  }
+
+  remember(key, value) {
+    if (!key) return;
+    this.store.set(key, this.clone(value));
+  }
+
+  recall(key) {
+    if (!this.store.has(key)) return undefined;
+    return this.clone(this.store.get(key));
+  }
+
+  forget(key) {
+    this.store.delete(key);
+  }
+
+  listKeys() {
+    return Array.from(this.store.keys());
+  }
+
+  clone(value) {
+    if (typeof structuredClone === "function") {
+      return structuredClone(value);
+    }
+    return JSON.parse(JSON.stringify(value));
+  }
+}
+
+class LocalMemory extends Memory {
+  constructor(namespace = "LLM_Memory") {
+    super(namespace);
+    this.available = typeof localStorage !== "undefined";
+    this.load();
+  }
+
+  load() {
+    if (!this.available) return;
+    try {
+      const raw = localStorage.getItem(this.namespace);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      Object.entries(parsed).forEach(([key, value]) => {
+        this.store.set(key, value);
+      });
+    } catch (error) {
+      console.warn("Unable to hydrate local memory", error);
+      this.store.clear();
+    }
+  }
+
+  persist() {
+    if (!this.available) return;
+    try {
+      const payload = {};
+      this.store.forEach((value, key) => {
+        payload[key] = value;
+      });
+      localStorage.setItem(this.namespace, JSON.stringify(payload));
+    } catch (error) {
+      console.warn("Unable to persist local memory", error);
+    }
+  }
+
+  remember(key, value) {
+    super.remember(key, value);
+    this.persist();
+  }
+
+  forget(key) {
+    super.forget(key);
+    this.persist();
+  }
+}
+
+class Neuron {
+  constructor(inputSize) {
+    this.weights = Array.from({ length: inputSize }, () => Math.random() * 0.2 - 0.1);
+    this.bias = Math.random() * 0.2 - 0.1;
+  }
+
+  activate(inputs = []) {
+    let sum = this.bias;
+    for (let i = 0; i < this.weights.length; i++) {
+      sum += this.weights[i] * (inputs[i] ?? 0);
+    }
+    return sigmoid(sum);
+  }
+}
+
+class Layer {
+  constructor(size, inputSize) {
+    this.neurons = Array.from({ length: size }, () => new Neuron(inputSize));
+  }
+
+  forward(inputs) {
+    return this.neurons.map((neuron) => neuron.activate(inputs));
+  }
+}
+
+class SelfLearningLLM {
+  constructor({ inputSize = 48, hiddenSize = 24, outputSize = INTENT_CLASSES.length, namespace = "chat-garden-llm" } = {}) {
+    this.inputSize = inputSize;
+    this.hiddenLayer = new Layer(hiddenSize, inputSize);
+    this.outputLayer = new Layer(outputSize, hiddenSize);
+    this.memory = new LocalMemory(namespace);
+    this.learningRate = 0.18;
+    this.maxInteractions = 180;
+    this.interactions = this.memory.recall("interactions") ?? [];
+    this.index = new Map(
+      this.interactions.map((entry) => [entry.key, true])
+    );
+  }
+
+  isReady() {
+    return this.interactions.length >= 3;
+  }
+
+  vectorize(text, tags = []) {
+    const vector = new Array(this.inputSize).fill(0);
+    const tokens = tokenize(text ?? "");
+    tokens.forEach((token) => {
+      const index = hashToIndex(stemToken(token), this.inputSize);
+      vector[index] += 1;
+    });
+    const normalizedTags = normalizeTagCollection(tags);
+    normalizedTags.forEach((tag) => {
+      const index = hashToIndex(tag.term, this.inputSize);
+      vector[index] += Number(tag.weight ?? 1) * 0.6;
+    });
+    const max = Math.max(...vector);
+    if (!max) return vector;
+    return vector.map((value) => Number((value / max).toFixed(6)));
+  }
+
+  forward(vector) {
+    const hidden = this.hiddenLayer.forward(vector);
+    const output = this.outputLayer.forward(hidden);
+    return { hidden, output };
+  }
+
+  train(vector, target) {
+    const { hidden, output } = this.forward(vector);
+    const outputDeltas = output.map((value, index) => {
+      const error = (target[index] ?? 0) - value;
+      return error * value * (1 - value);
+    });
+
+    this.outputLayer.neurons.forEach((neuron, neuronIndex) => {
+      const delta = outputDeltas[neuronIndex];
+      neuron.bias += this.learningRate * delta;
+      neuron.weights = neuron.weights.map(
+        (weight, weightIndex) => weight + this.learningRate * delta * (hidden[weightIndex] ?? 0)
+      );
+    });
+
+    const hiddenDeltas = this.hiddenLayer.neurons.map((_, hiddenIndex) => {
+      const error = this.outputLayer.neurons.reduce(
+        (sum, neuron, neuronIndex) => sum + neuron.weights[hiddenIndex] * outputDeltas[neuronIndex],
+        0
+      );
+      return error * hidden[hiddenIndex] * (1 - hidden[hiddenIndex]);
+    });
+
+    this.hiddenLayer.neurons.forEach((neuron, neuronIndex) => {
+      const delta = hiddenDeltas[neuronIndex];
+      neuron.bias += this.learningRate * delta;
+      neuron.weights = neuron.weights.map(
+        (weight, weightIndex) => weight + this.learningRate * delta * (vector[weightIndex] ?? 0)
+      );
+    });
+
+    return { hidden, output };
+  }
+
+  buildTarget(intentScores = {}, fallbackIntent = null) {
+    const base = INTENT_CLASSES.map((intent) => Number(intentScores[intent] ?? 0));
+    if (base.every((score) => score === 0) && fallbackIntent) {
+      const index = INTENT_CLASSES.indexOf(fallbackIntent);
+      if (index >= 0) {
+        base[index] = 1;
+      }
+    }
+    const sum = base.reduce((total, value) => total + value, 0);
+    if (!sum) {
+      return INTENT_CLASSES.map(() => 0.25);
+    }
+    return base.map((value) => value / sum);
+  }
+
+  rememberInteraction(entry) {
+    if (!entry || !entry.key) return;
+    if (this.index.has(entry.key)) {
+      this.interactions = this.interactions.map((existing) =>
+        existing.key === entry.key ? { ...existing, ...entry } : existing
+      );
+    } else {
+      this.interactions.unshift(entry);
+      this.index.set(entry.key, true);
+    }
+    if (this.interactions.length > this.maxInteractions) {
+      const removed = this.interactions.splice(this.maxInteractions);
+      removed.forEach((item) => this.index.delete(item.key));
+    }
+    this.memory.remember("interactions", this.interactions);
+  }
+
+  learnFrom(prompt, response, meta = {}, context = {}) {
+    if (!prompt || !response) return;
+    const tags = normalizeTagCollection(meta.tags ?? []);
+    const vector = this.vectorize(prompt, tags);
+    const target = this.buildTarget(meta.intentScores ?? {}, meta.intent ?? null);
+    const { hidden, output } = this.train(vector, target);
+    const probabilities = softmax(output);
+    const timestamp = context.timestamp ?? Date.now();
+    const key = context.key ?? `${context.promptId ?? ""}->${context.responseId ?? ""}`;
+    const entry = {
+      key,
+      prompt: prompt.trim(),
+      response: response.trim(),
+      promptExcerpt: truncateForContext(prompt, 120),
+      responseExcerpt: truncateForContext(stripHtml(response), 160),
+      tags,
+      embedding: normalizeVector(hidden),
+      intentDistribution: probabilities,
+      intent: meta.intent ?? null,
+      confidence: Number(meta.intentConfidence ?? 0),
+      origin: meta.strategy ?? context.origin ?? "conversation",
+      timestamp,
+    };
+    this.rememberInteraction(entry);
+  }
+
+  learnSeed(seed) {
+    if (!seed) return;
+    this.learnFrom(seed.prompt, seed.response, {
+      tags: seed.tags ?? [],
+      intentScores: seed.intentProfile?.probabilities ?? {},
+      intent: seed.intentProfile?.intent ?? null,
+      intentConfidence: seed.intentProfile?.confidence ?? 0.7,
+      strategy: "seed",
+    }, {
+      key: `seed:${seed.id}`,
+      origin: "seed",
+      timestamp: new Date(seed.createdAt ?? Date.now()).getTime(),
+    });
+  }
+
+  learnFromInteraction(promptMessage, responseMessage) {
+    if (!promptMessage || !responseMessage) return;
+    const promptMeta = promptMessage.meta ?? {};
+    const responseMeta = responseMessage.meta ?? {};
+    const tags = normalizeTagCollection([
+      ...(promptMeta.tags ?? []),
+      ...(responseMeta.tags ?? []),
+    ]);
+    let intentScores = promptMeta.intentScores ?? {};
+    let intent = promptMeta.intent ?? null;
+    let intentConfidence = promptMeta.intentConfidence ?? null;
+    if (!Object.keys(intentScores).length) {
+      const profile = scoreIntentProbabilities(
+        promptMessage.content,
+        promptMeta.tags ?? [],
+        { useLearning: false }
+      );
+      intentScores = profile?.probabilities ?? {};
+      intent = intent ?? profile?.intent ?? null;
+      intentConfidence = intentConfidence ?? profile?.confidence ?? null;
+    }
+    this.learnFrom(
+      promptMessage.content,
+      responseMessage.content,
+      {
+        tags,
+        intentScores,
+        intent,
+        intentConfidence,
+        strategy: responseMeta.strategy ?? "learned",
+      },
+      {
+        key: `msg:${promptMessage.id ?? "?"}->${responseMessage.id ?? "?"}`,
+        promptId: promptMessage.id,
+        responseId: responseMessage.id,
+        origin: responseMeta.strategy ?? "conversation",
+        timestamp: new Date(responseMessage.createdAt ?? Date.now()).getTime(),
+      }
+    );
+  }
+
+  primeFromState(initialState = {}) {
+    (initialState.seeds ?? []).forEach((seed) => this.learnSeed(seed));
+    const messages = Array.isArray(initialState.messages) ? initialState.messages : [];
+    for (let i = 0; i < messages.length - 1; i++) {
+      const prompt = messages[i];
+      const reply = messages[i + 1];
+      if (prompt.role === "user" && reply.role === "garden") {
+        this.learnFromInteraction(prompt, reply);
+      }
+    }
+  }
+
+  predictIntentScores(text, tags = []) {
+    const vector = this.vectorize(text, tags);
+    const { output } = this.forward(vector);
+    const probabilities = softmax(output);
+    const confidence = Math.max(...probabilities);
+    return {
+      raw: output,
+      probabilities: INTENT_CLASSES.reduce((acc, intent, index) => {
+        acc[intent] = Number(probabilities[index].toFixed(3));
+        return acc;
+      }, {}),
+      confidence,
+    };
+  }
+
+  generateResponse(prompt, { tags = [], intentProfile = {}, tone, creativityFactor = 0.5 }) {
+    if (!this.isReady()) return null;
+    const vector = this.vectorize(prompt, tags);
+    const { hidden } = this.forward(vector);
+    const embedding = normalizeVector(hidden);
+    const now = Date.now();
+
+    const scored = this.interactions
+      .map((entry) => {
+        if (!entry.embedding || entry.embedding.length !== embedding.length) return null;
+        const similarity = cosineSimilarity(embedding, entry.embedding);
+        const intentBoost = INTENT_CLASSES.reduce(
+          (sum, intent, index) =>
+            sum +
+            (intentProfile.probabilities?.[intent] ?? 0) *
+              (entry.intentDistribution?.[index] ?? entry.intentDistribution?.[intent] ?? 0),
+          0
+        );
+        const hours = now - entry.timestamp > 0 ? (now - entry.timestamp) / (1000 * 60 * 60) : 0;
+        const recency = 1 / (1 + hours / 24);
+        const confidence = entry.confidence ?? 0.5;
+        const score = similarity * 0.6 + intentBoost * 0.3 + recency * 0.1;
+        return {
+          entry,
+          score,
+          similarity,
+          intentBoost,
+          recency,
+          confidence,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score);
+
+    if (!scored.length || scored[0].score < 0.22) {
+      return null;
+    }
+
+    const topEntries = scored.slice(0, 3);
+    const aggregatedTags = normalizeTagCollection([
+      ...tags,
+      ...topEntries.flatMap((item) => item.entry.tags ?? []),
+    ]);
+    const focusTags = aggregatedTags.slice(0, 5);
+    const focusTerms = focusTags.slice(0, 3).map((tag) => tag.term);
+
+    const memorySummary = buildLearnedMemorySummary(topEntries.map((item) => item.entry));
+    const reflectionLine = buildMemoryReflection(topEntries.map((item) => item.entry));
+    const actionLine = buildLearnedActionLine(intentProfile.intent, focusTerms);
+    const followUp = buildLearnedFollowUp(intentProfile.intent, focusTerms);
+
+    const learnedText = [memorySummary, reflectionLine, actionLine, followUp]
+      .filter(Boolean)
+      .join("\n\n");
+
+    const qScore = buildQScore({
+      strategy: "learned",
+      tags: focusTags.length ? focusTags : tags,
+      intentConfidence: intentProfile.confidence,
+    });
+
+    const learnedContext = topEntries.map((item) => ({
+      id: item.entry.key,
+      intent: item.entry.intent,
+      score: Number(item.score.toFixed(3)),
+      prompt: item.entry.promptExcerpt,
+      response: item.entry.responseExcerpt,
+      tags: extractTagTerms(item.entry.tags ?? []),
+      origin: item.entry.origin,
+    }));
+
+    const meta = {
+      strategy: "learned",
+      tone,
+      persona: personality.name,
+      channel: personality.channels[tone],
+      drift: Math.round(creativityFactor * 100),
+      tags,
+      intent: intentProfile.intent,
+      intentConfidence: intentProfile.confidence,
+      intentScores: intentProfile.probabilities,
+      protocol: qScore.protocol,
+      qScore,
+      learnedContext,
+      focusTags: focusTags.map((tag) => ({ ...tag })),
+      learningEvidence: {
+        topScore: Number(topEntries[0]?.score.toFixed(3)),
+        averageSimilarity: Number(
+          (
+            topEntries.reduce((sum, item) => sum + item.similarity, 0) /
+            topEntries.length
+          ).toFixed(3)
+        ),
+      },
+    };
+    meta.summary = distillResponseSummary(meta);
+
+    return {
+      text: infusePersonality(learnedText, tone, creativityFactor, qScore),
+      meta,
+    };
+  }
+}
+
+function buildLearnedMemorySummary(entries = []) {
+  if (!entries.length) return "";
+  const quotes = entries.slice(0, 3).map((entry) => `“${entry.promptExcerpt}”`);
+  const list = formatAsReadableList(quotes);
+  if (entries.length === 1) {
+    return `I'm recalling how we explored ${list} and weaving that learning into this reply.`;
+  }
+  return `I'm recalling learning moments like ${list} and weaving them together for this response.`;
+}
+
+function buildMemoryReflection(entries = []) {
+  if (!entries.length) return "";
+  const [primary, secondary] = entries;
+  let line = `Earlier you shared “${primary.promptExcerpt}”, and I answered with “${primary.responseExcerpt}.”`;
+  if (secondary) {
+    line += ` I'm also blending in our exchange about “${secondary.promptExcerpt}.”`;
+  }
+  return line;
+}
+
+function createLearningEngine(initialState) {
+  const engine = new SelfLearningLLM();
+  try {
+    engine.primeFromState(initialState ?? {});
+  } catch (error) {
+    console.warn("Unable to prime learning engine", error);
+  }
+  return engine;
+}
+
 const defaultState = () => ({
   messages: [],
   seeds: [],
@@ -195,7 +697,10 @@ const defaultState = () => ({
   },
 });
 
+let learningEngine;
 const state = loadState();
+
+learningEngine = createLearningEngine(state);
 
 const ui = typeof document !== "undefined"
   ? {
@@ -289,6 +794,9 @@ function wireEvents() {
       };
 
       state.seeds.unshift(seed);
+      if (learningEngine) {
+        learningEngine.learnSeed(seed);
+      }
       ui.seedForm.reset();
       refreshMetrics();
       renderAll();
@@ -571,6 +1079,15 @@ function addMessage(role, content, meta = {}) {
     if (metaWithTags.strategy === "seed-match") {
       state.metrics.seedMatchSuccess.matches += 1;
     }
+    if (learningEngine) {
+      const prior = [...state.messages]
+        .slice(0, -1)
+        .reverse()
+        .find((item) => item.role === "user");
+      if (prior) {
+        learningEngine.learnFromInteraction(prior, message);
+      }
+    }
   }
   refreshStreak();
 }
@@ -719,6 +1236,18 @@ function synthesizeResponse(content, creativity) {
 }
 
 function attemptConversationLearnedResponse({ content, tags, intentProfile, tone, creativityFactor }) {
+  if (learningEngine) {
+    const candidate = learningEngine.generateResponse(content, {
+      tags,
+      intentProfile,
+      tone,
+      creativityFactor,
+    });
+    if (candidate) {
+      return candidate;
+    }
+  }
+
   const userMessages = state.messages.filter((message) => message.role === "user");
   if (userMessages.length < 3) {
     return null;
@@ -1704,7 +2233,8 @@ function buildUserMeta(content, creativity) {
   };
 }
 
-function scoreIntentProbabilities(content, tags = []) {
+function scoreIntentProbabilities(content, tags = [], options = {}) {
+  const { useLearning = true } = options;
   const text = String(content ?? "");
   const normalizedText = text.trim().toLowerCase();
   const tokens = tokenize(text);
@@ -1841,10 +2371,33 @@ function scoreIntentProbabilities(content, tags = []) {
   }
 
   const total = Object.values(scores).reduce((sum, value) => sum + value, 0) || 1;
-  const probabilities = INTENT_CLASSES.reduce((acc, intent) => {
+  let probabilities = INTENT_CLASSES.reduce((acc, intent) => {
     acc[intent] = Number((scores[intent] / total).toFixed(3));
     return acc;
   }, {});
+
+  if (useLearning && learningEngine && learningEngine.isReady()) {
+    try {
+      const learned = learningEngine.predictIntentScores(text, normalizedTags);
+      if (learned?.probabilities) {
+        const blendWeight = clamp(0.4 + 0.4 * (learned.confidence ?? 0));
+        const heuristicWeight = 1 - blendWeight;
+        const blended = {};
+        INTENT_CLASSES.forEach((intent) => {
+          const heur = probabilities[intent] ?? 0;
+          const learnedProb = learned.probabilities[intent] ?? heur;
+          blended[intent] = heur * heuristicWeight + learnedProb * blendWeight;
+        });
+        const blendTotal = Object.values(blended).reduce((sum, value) => sum + value, 0) || 1;
+        probabilities = INTENT_CLASSES.reduce((acc, intent) => {
+          acc[intent] = Number((blended[intent] / blendTotal).toFixed(3));
+          return acc;
+        }, {});
+      }
+    } catch (error) {
+      console.warn("Unable to blend learning intent scores", error);
+    }
+  }
 
   const [intent, confidence] = Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0];
 
