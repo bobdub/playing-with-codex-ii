@@ -690,21 +690,18 @@ function attemptConversationLearnedResponse({ content, tags, intentProfile, tone
     .filter(Boolean);
 
   const promptSummary = buildPromptSummary(promptFragments, recentPrompts.length);
-  const focusSummary = focusTerms.length
-    ? `I hear consistent threads around ${formatAsReadableList(focusTerms)}.`
-    : "I'm collecting the themes woven through your prompts.";
-
-  const observationLines = focusTerms.map(
-    (term) => `- ${titleize(term)} keeps surfacing in your prompts.`
-  );
-  const ledgerHighlights = observationLines.length
-    ? `Ledger highlights:\n${observationLines.join("\n")}`
-    : null;
-
+  const themeLine = buildThemeLine(focusTerms);
   const actionLine = buildLearnedActionLine(intentProfile.intent, focusTerms);
+  const followUp = buildLearnedFollowUp(intentProfile.intent, focusTerms);
 
-  const sections = [promptSummary, focusSummary, ledgerHighlights, actionLine, "Keep guiding me and I will continue refining this learned pathway."];
-  const learnedText = sections.filter(Boolean).join("\n\n");
+  const learnedText = [
+    promptSummary,
+    themeLine,
+    actionLine,
+    followUp,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   const qScore = buildQScore({
     strategy: "learned",
@@ -740,28 +737,55 @@ function buildPromptSummary(promptFragments, totalCount) {
     const quotes = promptFragments.map((fragment) => `“${fragment.excerpt}”`);
     const list = formatAsReadableList(quotes);
     if (totalCount > promptFragments.length) {
-      return `I've anchored ${totalCount} recent prompts, including ${list}.`;
+      return `I've been listening to your last ${totalCount} prompts — including ${list} — and I'm weaving them together.`;
     }
-    return `Your recent prompts — ${list} — are now anchored in the ledger.`;
+    return `I've been listening to ${list}, and I'm weaving them together.`;
   }
   if (totalCount) {
-    return `I've anchored ${totalCount} recent prompts in the ledger and I'm preparing a deeper reply.`;
+    return `I'm holding the last ${totalCount} prompts you've shared and shaping a response around them.`;
   }
-  return "I'm anchoring your prompts in the ledger and preparing a deeper reply.";
+  return "I'm holding onto what you've shared and shaping a response around it.";
+}
+
+function buildThemeLine(focusTerms) {
+  if (!focusTerms.length) {
+    return "I'm still feeling out the common threads, so keep guiding me and I'll keep tuning this reply.";
+  }
+  const focusLabel = formatAsReadableList(focusTerms.map((term) => titleize(term)));
+  return `It sounds like you're centering on ${focusLabel}. If I should lean toward another thread, just say the word.`;
 }
 
 function buildLearnedActionLine(intent, focusTerms) {
-  const focusLabel = focusTerms.length ? formatAsReadableList(focusTerms) : "this thread";
+  const focusLabel = focusTerms.length
+    ? formatAsReadableList(focusTerms.map((term) => titleize(term)))
+    : "this thread";
   switch (intent) {
     case "planning":
-      return `Here's an outline we can follow for ${focusLabel}: define the desired outcome, gather essential resources, and mark the immediate next step.`;
+      return `To move ${focusLabel} forward, we can clarify the outcome you're aiming for, gather the key resources, and pick the next step together.`;
     case "reflection":
-      return `Let's reflect on ${focusLabel}: capture what stands out, note the feelings involved, and write down the insight we want to carry forward.`;
+      return `As we linger with ${focusLabel}, let's capture what stands out, notice how it feels, and keep the insight you want to carry forward.`;
     case "signal":
-      return `I'll treat ${focusLabel} as an active signal—summarizing the status so far and noting the next follow-up to watch.`;
+      return `I'll keep ${focusLabel} flagged as an active signal—summarizing where things stand and calling out the next follow-up worth watching.`;
     case "inquiry":
     default:
-      return `I'll start drafting guidance for ${focusLabel}, highlighting what I can synthesize now and where planting a focused seed would deepen the answer.`;
+      return `Let me start shaping guidance around ${focusLabel}, highlighting what I can offer now and what a focused seed would help illuminate.`;
+  }
+}
+
+function buildLearnedFollowUp(intent, focusTerms) {
+  const focusLabel = focusTerms.length
+    ? formatAsReadableList(focusTerms.map((term) => titleize(term)))
+    : "this direction";
+  switch (intent) {
+    case "planning":
+      return `Which milestone around ${focusLabel} feels most pressing right now? I'm ready to chart it with you.`;
+    case "reflection":
+      return `What part of ${focusLabel} is resonating most for you in this moment? I can linger there with you.`;
+    case "signal":
+      return `Is there an update within ${focusLabel} you'd like me to watch for next?`;
+    case "inquiry":
+    default:
+      return `What else would you like to explore about ${focusLabel}? I'm listening.`;
   }
 }
 
